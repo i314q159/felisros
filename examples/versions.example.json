@@ -1,0 +1,28 @@
+{
+  "schema": "felisros/versions/v1",
+  "name": "实验室内网版本清单",
+  "versions": [
+    {
+      "name": "jazzy-lab",
+      "ros": "ROS2",
+      "status": "LTS",
+      "codenames": ["noble"],
+      "packages": {
+        "desktop": "ros-jazzy-desktop",
+        "base": "ros-jazzy-ros-base"
+      },
+      "deps": ["python3-colcon-common-extensions"],
+      "recommended": true
+    }
+  ],
+  "mirrors": [
+    {
+      "name": "lab",
+      "label": "实验室内网",
+      "ROS2": "https://ros.lab.example/ros2/ubuntu/"
+    }
+  ],
+  "support": {
+    "noble": ["lab", "ustc"]
+  }
+}

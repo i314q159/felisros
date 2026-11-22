@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=felisros
+Comment=ROS 图形化安装器 · 无遥测
+Exec=@PREFIX@/bin/felisros
+Icon=utilities-system
+Terminal=false
+Categories=System;

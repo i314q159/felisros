@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>felisros · ROS 图形化安装器</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 40 40" aria-hidden="true">
+      <path d="M8 16 L10 5 L18 10" />
+      <path d="M32 16 L30 5 L22 10" />
+      <path d="M8 16 C8 26 13 32 20 32 C27 32 32 26 32 16" />
+      <circle cx="15" cy="19" r="1.5" class="fill" />
+      <circle cx="25" cy="19" r="1.5" class="fill" />
+      <path d="M17 25 Q20 27.5 23 25" />
+    </svg>
+    <div class="brand-text">
+      <h1>felisros</h1>
+      <p>ROS 图形化安装器 · 把 fishros 的安装经验做成界面</p>
+    </div>
+  </div>
+  <nav class="nav-tabs">
+    <button type="button" class="is-on" id="tab-single">单机安装</button>
+    <button type="button" id="tab-fleet">局域网批量部署</button>
+    <button type="button" id="tab-generator">高级 · 配置生成器</button>
+    <button type="button" id="tab-distribute">局域网分发</button>
+    <button type="button" id="tab-update">设备互更新</button>
+  </nav>
+  <div class="pills">
+    <span class="pill" id="pill-mode">检测中</span>
+    <span class="pill quiet">无遥测 · 无广告</span>
+  </div>
+</header>
+
+<main>
+  <section id="view-config" class="view">
+    <div class="grid">
+      <article class="card">
+        <h2>当前系统</h2>
+        <dl class="facts" id="facts">
+          <div><dt>发行版</dt><dd>读取中</dd></div>
+        </dl>
+        <p class="note" id="support-note"></p>
+      </article>
+
+      <article class="card">
+        <h2>安装模式</h2>
+        <div class="modes">
+          <button type="button" class="mode is-on" data-mode="auto">
+            <strong>全自动</strong>
+            <span>测速选镜像、按系统推荐版本，磁盘不够自动降级为基础版</span>
+          </button>
+          <button type="button" class="mode" data-mode="custom">
+            <strong>自定义</strong>
+            <span>自己选择 ROS 版本、桌面版 / 基础版与镜像源</span>
+          </button>
+        </div>
+
+        <div class="custom" id="custom-panel" hidden>
+          <label class="field">
+            <span>ROS 版本</span>
+            <select id="version"></select>
+          </label>
+          <label class="field">
+            <span>安装内容</span>
+            <select id="kind">
+              <option value="auto">自动（按磁盘空间决定）</option>
+              <option value="desktop">桌面版（含 RViz、小乌龟等图形工具）</option>
+              <option value="base">基础版（只有核心通信库）</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>ROS 镜像源</span>
+            <select id="mirror"></select>
+          </label>
+        </div>
+
+        <label class="check">
+          <input type="checkbox" id="change-source" checked>
+          <span>同时把系统软件源换成国内镜像（原配置会备份为 <code>.felisros.bak</code>）</span>
+        </label>
+
+        <p class="note bad" id="control-note" hidden>当前是 Windows 控制端：不允许在 Windows 本机安装 ROS 或更新自身。请切换到“局域网批量部署”，把软件与更新分发给 Linux 设备。</p>
+        <div class="actions">
+          <button type="button" class="primary" id="start">开始安装</button>
+          <span class="hint">需要 sudo 权限，建议先执行 <code>sudo -v</code> 缓存凭证</span>
+        </div>
+      </article>
+    </div>
+
+    <article class="card import-card">
+      <h2>配置文件 / 版本导入</h2>
+      <div class="import-grid">
+        <div class="import-box">
+          <h3>配置文件一键部署</h3>
+          <p class="note">导入 <code>felisros/deploy/v1</code> JSON，可一次指定版本、安装内容、镜像源和额外软件包。</p>
+          <input type="file" id="deploy-file" accept=".json,application/json">
+          <textarea id="deploy-text" spellcheck="false" placeholder="选择文件或粘贴 JSON 配置"></textarea>
+          <div class="import-actions">
+            <button type="button" class="ghost" id="deploy-preview">预览配置</button>
+            <button type="button" class="ghost" id="deploy-fill">填入表单</button>
+            <button type="button" class="primary" id="deploy-now">一键部署</button>
+            <button type="button" class="ghost" id="deploy-export">导出当前配置</button>
+          </div>
+          <pre class="preview" id="deploy-info">尚未导入配置</pre>
+        </div>
+
+        <div class="import-box">
+          <h3>导入 ROS 版本清单</h3>
+          <p class="note">导入 <code>felisros/versions/v1</code> JSON，可新增自定义发行版、镜像地址与系统支持关系。</p>
+          <input type="file" id="versions-file" accept=".json,application/json">
+          <textarea id="versions-text" spellcheck="false" placeholder="选择文件或粘贴 JSON 版本清单"></textarea>
+          <div class="import-actions">
+            <button type="button" class="ghost" id="versions-preview">校验清单</button>
+            <button type="button" class="primary" id="versions-import">导入版本</button>
+            <button type="button" class="ghost" id="versions-clear">清除导入</button>
+          </div>
+          <pre class="preview" id="versions-info">读取中</pre>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section id="view-run" class="view" hidden>
+    <article class="card">
+      <ol class="steps" id="steps"></ol>
+      <div class="bar"><i id="bar-fill"></i></div>
+      <div class="run-head">
+        <span id="run-msg">准备中</span>
+        <button type="button" class="ghost" id="cancel">取消</button>
+      </div>
+      <pre class="log" id="log"></pre>
+    </article>
+  </section>
+
+  <section id="view-done" class="view" hidden>
+    <article class="card">
+      <div class="verdict" id="verdict">
+        <span class="dotmark" id="verdict-dot"></span>
+        <div>
+          <h2 id="result-title">安装完成</h2>
+          <p id="result-desc"></p>
+        </div>
+      </div>
+      <dl class="facts result-facts" id="result-facts"></dl>
+      <div id="commands" class="commands"></div>
+      <div class="actions">
+        <button type="button" class="primary" id="restart">再来一次</button>
+        <button type="button" class="ghost" id="show-log">查看日志</button>
+      </div>
+    </article>
+  </section>
+
+  <section id="view-fleet" class="view" hidden>
+    <article class="card">
+      <h2>局域网设备发现</h2>
+      <div class="net-sources">
+        <span class="hint">本机网卡（勾选要扫描的网段，可多选；全部留空则扫描所有网卡）</span>
+        <div class="net-list" id="net-list"></div>
+      </div>
+      <div class="net-row">
+        <label class="field">
+          <span>额外扫描网段（CIDR，多个用逗号分隔）</span>
+          <input type="text" id="net-input" placeholder="192.168.1.0/24, 10.0.0.0/24">
+        </label>
+        <label class="check"><input type="checkbox" id="linux-only" checked><span>只显示 Linux 设备</span></label>
+        <button type="button" class="primary" id="net-scan">嗅探设备</button>
+      </div>
+      <pre class="preview" id="discover-log">等待扫描</pre>
+      <div class="device-wrap">
+        <table class="devices">
+          <thead>
+            <tr><th>选择</th><th>IP</th><th>系统</th><th>MAC</th><th>主机名</th><th>SSH</th><th>用户名</th><th>SSH 密码</th><th>Sudo 密码</th><th>状态</th></tr>
+          </thead>
+          <tbody id="device-body"><tr><td colspan="10" class="empty">尚未发现设备</td></tr></tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <button type="button" class="ghost" id="dev-all">全选 / 取消</button>
+        <button type="button" class="ghost" id="fleet-import">导入设备清单</button>
+        <input type="file" id="fleet-file" accept=".json,application/json" hidden>
+        <button type="button" class="ghost" id="fleet-export">导出设备清单</button>
+        <button type="button" class="ghost" id="fleet-clear">清除清单</button>
+        <span class="hint">密码不会显示在日志或接口返回里；也可用 <code>${环境变量名}</code> 代替明文。</span>
+      </div>
+    </article>
+
+    <article class="card" id="quick-card">
+      <h2>快速部署</h2>
+      <p class="note">扫描并勾选设备后，只需填一次登录信息。ROS 配置自动生成，不用再去配置生成器。</p>
+      <div class="import-grid">
+        <div class="import-box">
+          <h3>安装内容</h3>
+          <label class="field"><span>ROS 版本</span><select id="quick-version"></select></label>
+          <label class="field"><span>安装内容</span><select id="quick-kind"><option value="auto">自动（按磁盘空间决定）</option><option value="desktop">桌面版</option><option value="base">基础版</option></select></label>
+          <p class="hint">镜像源自动测速，系统源自动切换为国内镜像。</p>
+        </div>
+        <div class="import-box">
+          <h3>登录信息（只填一次）</h3>
+          <label class="field"><span>用户名</span><input type="text" id="quick-user" value="root"></label>
+          <label class="field"><span>SSH 密码</span><input type="password" id="quick-password" placeholder="留空则使用密钥登录"></label>
+          <label class="field"><span>Sudo 密码</span><input type="password" id="quick-sudo" placeholder="留空则与 SSH 密码相同"></label>
+          <div class="actions">
+            <button type="button" class="primary" id="quick-start">扫描并一键部署</button>
+          </div>
+          <p class="hint" id="quick-hint">未扫描时会自动扫描上方网段，并部署所有勾选的设备。</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="card fleet-card">
+      <h2>批量部署设置</h2>
+      <details id="fleet-advanced">
+        <summary>高级设置（凭据预设、任务细项、自定义配置文件）</summary>
+        <div class="import-grid">
+        <div class="import-box">
+          <h3>默认凭据</h3>
+          <label class="field"><span>默认用户名</span><input type="text" id="fleet-user" value="root"></label>
+          <label class="field"><span>默认 SSH 密码</span><input type="password" id="fleet-password" placeholder="留空则使用密钥登录"></label>
+          <label class="field"><span>默认 Sudo 密码</span><input type="password" id="fleet-sudo" placeholder="留空则与 SSH 密码相同"></label>
+          <label class="field"><span>并发数量（1-99）</span><input type="number" id="fleet-workers" min="1" max="99" value="3"></label>
+          <div class="preset-box">
+            <h4>凭据预设（只需填用户名和密码）</h4>
+            <label class="field"><span>预设名称</span><input type="text" id="preset-name" value="default" placeholder="default"></label>
+            <div class="import-actions">
+              <button type="button" class="ghost" id="preset-save">保存预设</button>
+              <button type="button" class="ghost" id="preset-apply">套用到设备</button>
+              <button type="button" class="ghost" id="preset-delete">删除预设</button>
+            </div>
+            <label class="field"><span>已保存的预设</span><select id="preset-list"></select></label>
+            <p class="note">扫描到的 Linux 设备会自动套用上面的默认用户名和密码；Sudo 密码留空则与 SSH 密码相同。预设只需保存一次，之后每次扫描自动复用。</p>
+          </div>
+        </div>
+        <div class="import-box">
+          <h3>部署任务</h3>
+          <label class="field"><span>任务类型</span><select id="fleet-task"><option value="rollout">先分发 felisros 软件，再遥控安装 ROS（推荐）</option><option value="update_rollout">先让设备互相更新 felisros，再遥控安装 ROS</option><option value="software">只分发 felisros 软件（启动 + 开机自启）</option><option value="update">只更新设备上已安装的 felisros 版本</option><option value="ros">只安装 ROS（目标机临时运行安装器）</option></select></label>
+          <label class="field" id="fleet-seed-field"><span>更新源地址（留空则使用控制端本机）</span><input type="text" id="fleet-update-seed" placeholder="http://192.168.1.20:8737"></label>
+          <label class="field"><span>服务端口</span><input type="number" id="fleet-port" value="8737" min="1" max="65535"></label>
+          <label class="check"><input type="checkbox" id="fleet-autostart" checked><span>安装完成后启动服务并设置开机自启（systemd，失败回退 crontab）</span></label>
+          <p class="note" id="fleet-task-note">推荐任务会先把 felisros 软件装到设备并开机自启，再把下面的配置文件下发给设备，由设备上的 felisros 自动安装 ROS 并把结果和用时回传到这里。目标机无需预装任何软件。</p>
+          <label class="field" id="fleet-deploy-field"><span>ROS 部署配置文件（点击按钮从 Windows 选择 JSON，也可直接粘贴）</span><textarea id="fleet-deploy-text" spellcheck="false" placeholder="felisros/deploy/v1 JSON"></textarea></label>
+          <div class="import-actions">
+            <button type="button" class="ghost" id="fleet-config-import">选择配置文件</button>
+            <button type="button" class="ghost" id="fleet-config-repick">重新选择</button>
+            <input type="file" id="fleet-config-file" accept=".json,application/json" hidden>
+            <button type="button" class="ghost" id="fleet-config-preview">校验配置</button>
+            <button type="button" class="ghost" id="fleet-use-current">用单机配置填入</button>
+          </div>
+          <p class="note" id="fleet-config-name">尚未选择配置文件</p>
+          <div class="import-actions">
+            <button type="button" class="primary" id="fleet-start">开始批量部署</button>
+            <button type="button" class="ghost" id="fleet-cancel">取消</button>
+          </div>
+          <pre class="preview" id="fleet-summary">尚未设置</pre>
+        </div>
+      </div>
+      </details>
+      <div class="bar"><i id="fleet-bar"></i></div>
+      <ol class="fleet-devices" id="fleet-devices"></ol>
+      <pre class="log fleet-log" id="fleet-log"></pre>
+
+      <h3>安装结果与用时回传</h3>
+      <div class="device-wrap">
+        <table class="devices">
+          <thead>
+            <tr><th>设备</th><th>阶段</th><th>架构</th><th>ROS 版本</th><th>用时</th><th>结果</th></tr>
+          </thead>
+          <tbody id="report-body"><tr><td colspan="6" class="empty">尚未收到回传</td></tr></tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <button type="button" class="ghost" id="report-export">导出报告 JSON</button>
+        <span class="hint">结果由 Windows 端通过 SSH 从设备取回，不外发到任何服务器。</span>
+      </div>
+    </article>
+  </section>
+
+  <section id="view-generator" class="view" hidden>
+    <article class="card">
+      <h2>配置生成器</h2>
+      <p class="note">在 Windows、macOS 或 Linux 上都能生成配置文件。生成后直接下载到本机，拷到目标 Linux 设备即可使用；本页不会执行安装，也不会保存任何配置。</p>
+      <div class="import-grid">
+        <div class="import-box">
+          <h3>安装参数</h3>
+          <label class="field"><span>配置名称</span><input type="text" id="gen-name" placeholder="留空则自动命名"></label>
+          <label class="field"><span>ROS 版本</span><select id="gen-version"></select></label>
+          <label class="field"><span>安装内容</span><select id="gen-kind"><option value="auto">自动（按磁盘空间决定）</option><option value="desktop">桌面版</option><option value="base">基础版</option></select></label>
+          <label class="field"><span>ROS 镜像源</span><select id="gen-mirror"></select></label>
+          <label class="check"><input type="checkbox" id="gen-change-source" checked><span>同时把系统软件源换成国内镜像</span></label>
+          <label class="field"><span>额外软件包</span><input type="text" id="gen-extras" placeholder="逗号或空格分隔，例如 ros-jazzy-turtlesim vim"></label>
+        </div>
+
+        <div class="import-box">
+          <h3>部署方式</h3>
+          <label class="check remote-check">
+            <input type="checkbox" id="gen-remote">
+            <span><strong>远程部署</strong> · 勾选后生成批量部署清单（felisros/fleet/v1），可预置每台设备的用户名与密码</span>
+          </label>
+          <div id="gen-remote-panel" hidden>
+            <label class="field"><span>远程任务</span><select id="gen-task"><option value="rollout">分发软件 + 遥控安装 ROS（推荐）</option><option value="update_rollout">设备互更新 + 遥控安装 ROS</option><option value="software">只分发 felisros 软件</option><option value="update">只更新已安装的 felisros</option><option value="ros">只安装 ROS</option></select></label>
+            <label class="field"><span>更新源地址（更新任务用，留空用本机）</span><input type="text" id="gen-update-seed" placeholder="http://192.168.1.20:8737"></label>
+            <label class="field"><span>服务端口（软件安装任务）</span><input type="number" id="gen-port" value="8737" min="1" max="65535"></label>
+            <label class="check"><input type="checkbox" id="gen-autostart" checked><span>安装后启动服务并设置开机自启</span></label>
+            <label class="field"><span>目标网段（可选，CIDR）</span><input type="text" id="gen-network" placeholder="192.168.1.0/24"></label>
+            <div class="gen-defaults">
+              <label class="field"><span>默认用户名</span><input type="text" id="gen-user" value="root"></label>
+              <label class="field"><span>默认 SSH 密码</span><input type="password" id="gen-password" placeholder="留空则使用密钥登录"></label>
+              <label class="field"><span>默认 Sudo 密码</span><input type="password" id="gen-sudo" placeholder="留空则与 SSH 密码相同"></label>
+              <label class="field"><span>并发数量（1-99）</span><input type="number" id="gen-workers" min="1" max="99" value="3"></label>
+            </div>
+            <label class="field"><span>目标设备（每行一台）</span><textarea id="gen-devices" spellcheck="false" placeholder="192.168.1.12&#10;192.168.1.20,pi,raspberry&#10;192.168.1.35,pi,${ROBOT_PASS},${ROBOT_SUDO}"></textarea></label>
+            <div class="import-actions">
+              <button type="button" class="ghost" id="gen-fill-devices">从扫描结果填入</button>
+              <span class="hint">格式：IP[,用户名[,SSH密码[,Sudo密码]]]。支持 <code>${环境变量名}</code> 引用，避免明文落盘。</span>
+            </div>
+          </div>
+          <p class="note" id="gen-mode-note">当前生成：单机部署配置（felisros/deploy/v1）。</p>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="primary" id="gen-build">生成配置文件</button>
+        <button type="button" class="ghost" id="gen-download" disabled>下载到本机</button>
+        <button type="button" class="ghost" id="gen-copy" disabled>复制 JSON</button>
+        <button type="button" class="ghost" id="gen-apply" disabled>载入到批量部署</button>
+      </div>
+      <pre class="preview" id="gen-preview">尚未生成配置</pre>
+      <pre class="preview gen-json" id="gen-json" hidden></pre>
+    </article>
+  </section>
+
+  <section id="view-distribute" class="view" hidden>
+    <article class="card">
+      <h2>局域网自由分发</h2>
+      <p class="note">把 felisros 发布到局域网上，任何人都能自由、免费地下载安装。目标机不需要预装客户端，只要能访问这台机器、有 <code>curl</code> 或 <code>wget</code> 和 <code>python3</code> 即可。安装脚本会自动识别 x86、ARM 等架构。</p>
+      <div class="import-grid">
+        <div class="import-box">
+          <h3>一键安装命令</h3>
+          <pre class="preview" id="dist-command">读取中</pre>
+          <div class="import-actions">
+            <button type="button" class="ghost" id="dist-copy-command">复制安装命令</button>
+            <button type="button" class="ghost" id="dist-copy-url">复制分发页地址</button>
+          </div>
+          <p class="note" id="dist-lan-note"></p>
+        </div>
+        <div class="import-box">
+          <h3>直接下载安装包</h3>
+          <p class="note" id="dist-package-note">读取中</p>
+          <div class="import-actions">
+            <a class="primary dist-link" id="dist-download" href="/download/felisros-linux.tar.gz" download>下载 Linux 安装包</a>
+            <button type="button" class="ghost" id="dist-copy-sha">复制 SHA256</button>
+          </div>
+          <pre class="preview" id="dist-sha">读取中</pre>
+        </div>
+      </div>
+      <div class="dist-steps">
+        <h3>分发步骤</h3>
+        <ol>
+          <li>在 Windows 上用 <code>python app.py</code> 启动，默认监听所有网卡。</li>
+          <li>把上面的分发页地址或安装命令发给局域网内的用户。</li>
+          <li>对方在 Linux 终端粘贴命令即可；脚本自动识别架构、校验 SHA256、安装到用户目录，无需 root。</li>
+          <li>安装后运行 <code>~/.local/bin/felisros</code> 打开界面。</li>
+        </ol>
+        <p class="note">整个过程没有账号、授权、遥测或回传；安装包可自由复制分发。服务默认监听所有网卡，建议只在可信的局域网内运行；如需仅本机访问，用 <code>python app.py --host 127.0.0.1</code> 启动。</p>
+      </div>
+    </article>
+
+    <article class="card" id="dist-active-card">
+      <h2>主动批量分发（像批量部署 ROS 一样）</h2>
+      <p class="note">不用对方动手：控制端通过 SSH 把 felisros 安装包推送到多台 Linux 设备，自动安装、启动服务并设置开机自启。与「局域网批量部署」共用同一套批量引擎，逐台回传结果与用时。</p>
+      <div class="net-sources">
+        <span class="hint">本机网卡（勾选要扫描的网段，可多选；全部留空则扫描所有网卡）</span>
+        <div class="net-list" id="dist-net-list"></div>
+      </div>
+      <div class="net-row">
+        <label class="field">
+          <span>额外扫描网段（CIDR，多个用逗号分隔）</span>
+          <input type="text" id="dist-net-input" placeholder="192.168.1.0/24, 10.0.0.0/24">
+        </label>
+        <label class="check"><input type="checkbox" id="dist-linux-only" checked><span>只显示 Linux 设备</span></label>
+        <button type="button" class="ghost" id="dist-scan">扫描设备</button>
+      </div>
+      <pre class="preview" id="dist-discover-log">等待扫描</pre>
+      <div class="device-wrap">
+        <table class="devices">
+          <thead>
+            <tr><th>选择</th><th>IP</th><th>系统</th><th>用户名</th><th>SSH 密码</th><th>Sudo 密码</th><th>状态</th></tr>
+          </thead>
+          <tbody id="dist-device-body"><tr><td colspan="7" class="empty">尚未发现设备</td></tr></tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <button type="button" class="ghost" id="dist-all">全选 / 取消</button>
+      </div>
+      <div class="import-grid">
+        <div class="import-box">
+          <h3>统一登录信息</h3>
+          <label class="field"><span>用户名</span><input type="text" id="dist-user" value="root"></label>
+          <label class="field"><span>SSH 密码</span><input type="password" id="dist-password" placeholder="留空则使用密钥登录"></label>
+          <label class="field"><span>Sudo 密码</span><input type="password" id="dist-sudo" placeholder="留空则与 SSH 密码相同"></label>
+          <p class="hint">每台设备也可在上方单独覆盖；密码不会出现在日志或接口返回里。</p>
+        </div>
+        <div class="import-box">
+          <h3>分发设置</h3>
+          <label class="field"><span>并发数量（1-99）</span><input type="number" id="dist-workers" min="1" max="99" value="3"></label>
+          <label class="field"><span>服务端口</span><input type="number" id="dist-port" value="8737" min="1" max="65535"></label>
+          <label class="check"><input type="checkbox" id="dist-autostart" checked><span>安装后启动服务并设置开机自启（systemd，失败回退 crontab）</span></label>
+          <div class="import-actions">
+            <button type="button" class="primary" id="dist-start">批量分发软件</button>
+            <button type="button" class="ghost" id="dist-cancel">取消</button>
+          </div>
+        </div>
+      </div>
+      <div class="bar"><i id="dist-bar"></i></div>
+      <pre class="log" id="dist-log"></pre>
+      <h3>分发结果与用时回传</h3>
+      <div class="device-wrap">
+        <table class="devices">
+          <thead>
+            <tr><th>设备</th><th>架构</th><th>用时</th><th>结果</th></tr>
+          </thead>
+          <tbody id="dist-report-body"><tr><td colspan="4" class="empty">尚未收到回传</td></tr></tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <button type="button" class="ghost" id="dist-report-export">导出报告 JSON</button>
+      </div>
+    </article>
+  </section>
+  <section id="view-update" class="view" hidden>
+    <article class="card">
+      <h2>设备互更新 · 自由分发网络</h2>
+      <p class="note">装有 felisros 的 Linux 设备会向局域网广播自己的版本，任何设备都能从有最新版本的设备拉取安装包、校验 SHA256 后自更新。没有账号、授权、中心服务器，也没有遥测。</p>
+      <div class="role-banner" id="update-role">正在读取设备角色</div>
+      <div class="import-grid">
+        <div class="import-box">
+          <h3>本机版本与更新源</h3>
+          <p class="facts-inline" id="update-local">读取中</p>
+          <label class="field"><span>手动指定更新源</span><input type="text" id="update-seed" placeholder="http://192.168.1.20:8737 或 192.168.1.20"></label>
+          <div class="import-actions">
+            <button type="button" class="ghost" id="update-check">检查更新</button>
+            <button type="button" class="primary" id="update-apply">立即更新</button>
+          </div>
+          <label class="check"><input type="checkbox" id="update-auto"><span>自动更新：发现更高版本就拉取并重启服务</span></label>
+          <label class="field"><span>检查间隔（秒，最少 60）</span><input type="number" id="update-interval" value="300" min="60" max="3600"></label>
+          <div class="import-actions">
+            <button type="button" class="ghost" id="update-save">保存自动更新设置</button>
+            <button type="button" class="ghost" id="update-copy-seed">复制本机更新源地址</button>
+          </div>
+          <pre class="preview" id="update-status">尚未检查</pre>
+          <pre class="log update-log" id="update-log"></pre>
+        </div>
+        <div class="import-box">
+          <h3>局域网里的 felisros 设备</h3>
+          <div class="net-sources">
+            <span class="hint">本机网卡（勾选要扫描的网段，可多选；全部留空则扫描所有网卡）</span>
+            <div class="net-list" id="update-net-list"></div>
+          </div>
+          <div class="net-row">
+            <input type="text" id="update-network" placeholder="额外网段 CIDR，多个用逗号分隔">
+            <button type="button" class="ghost" id="update-scan">扫描更新源</button>
+          </div>
+          <div class="device-wrap">
+            <table class="devices">
+              <thead><tr><th>设备 IP</th><th>版本</th><th>角色</th><th>来源</th><th>操作</th></tr></thead>
+              <tbody id="peer-body"><tr><td colspan="5" class="empty">尚未发现设备，广播信标每 3 秒发送一次</td></tr></tbody>
+            </table>
+          </div>
+          <p class="hint">扫描会尝试直连网段内设备的 8737 端口读取 <code>/api/release</code>；广播信标使用 UDP 8738。</p>
+        </div>
+      </div>
+      <div class="dist-steps">
+        <h3>自由分发规则</h3>
+        <ol>
+          <li>任何 Linux 设备装上 felisros 后，都会成为可分发更新的种子；无需注册或付费。</li>
+          <li>局域网里的设备自动互相发现版本；版本号更高的一方自动成为更新源。</li>
+          <li>更新包下载后先校验 SHA256，再原子替换程序目录，并保留最近三份备份。</li>
+          <li>Windows 端只作控制端：不安装、不更新自身，但可以批量把更新推送给 Linux 设备。</li>
+        </ol>
+      </div>
+    </article>
+  </section>
+</main>
+
+<footer>
+  <span>felisros 为独立实现，安装逻辑参考 fishros 一键安装（CC BY-NC-SA 4.0），但不含任何遥测、统计上报或广告位。</span>
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>

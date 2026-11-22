@@ -1,0 +1,9 @@
+{
+  "schema": "felisros/deploy/v1",
+  "name": "实验室 ROS 一键部署",
+  "version": "jazzy",
+  "kind": "desktop",
+  "mirror": "ustc",
+  "change_system_source": true,
+  "extra_packages": ["ros-jazzy-turtlesim"]
+}

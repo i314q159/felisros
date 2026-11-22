@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+BASE=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+if [ -f "$BASE/app/app.py" ]; then
+  APP="$BASE/app/app.py"
+else
+  APP="$HOME/.local/share/felisros/app/app.py"
+fi
+exec python3 "$APP" "$@"

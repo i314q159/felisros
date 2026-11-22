@@ -1,0 +1,27 @@
+{
+  "schema": "felisros/fleet/v1",
+  "name": "设备互更新 + ROS 批量部署",
+  "network": "192.168.1.0/24",
+  "task": "update_rollout",
+  "update_seed": "http://192.168.1.20:8737",
+  "port": 8737,
+  "autostart": true,
+  "defaults": {
+    "username": "pi",
+    "password": "${FLEET_PASSWORD}",
+    "sudo_password": "${FLEET_SUDO_PASSWORD}"
+  },
+  "devices": [
+    { "ip": "192.168.1.12", "alias": "机器人一号", "selected": true },
+    { "ip": "192.168.1.35", "alias": "开发主机", "selected": true }
+  ],
+  "deploy": {
+    "schema": "felisros/deploy/v1",
+    "name": "更新后安装 ROS",
+    "version": "jazzy",
+    "kind": "base",
+    "mirror": "auto",
+    "change_system_source": false,
+    "extra_packages": []
+  }
+}

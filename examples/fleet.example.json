@@ -1,0 +1,27 @@
+{
+  "schema": "felisros/fleet/v1",
+  "name": "实验室设备清单",
+  "network": ["192.168.1.0/24", "10.0.0.0/24"],
+  "task": "rollout",
+  "port": 8737,
+  "autostart": true,
+  "defaults": {
+    "username": "pi",
+    "password": "${FLEET_PASSWORD}",
+    "sudo_password": "${FLEET_SUDO_PASSWORD}"
+  },
+  "devices": [
+    { "ip": "192.168.1.12", "alias": "机器人一号", "selected": true },
+    { "ip": "192.168.1.20", "alias": "开发主机", "username": "admin", "password": "${LAB_PASSWORD}", "selected": true },
+    { "ip": "192.168.1.35", "alias": "备用设备", "selected": false }
+  ],
+  "deploy": {
+    "schema": "felisros/deploy/v1",
+    "name": "批量 ROS 部署",
+    "version": "jazzy",
+    "kind": "base",
+    "mirror": "auto",
+    "change_system_source": false,
+    "extra_packages": []
+  }
+}
