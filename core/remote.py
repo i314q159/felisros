@@ -10,7 +10,7 @@ import subprocess
 import tarfile
 import tempfile
 
-from . import release
+from . import release, service
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REMOTE_BASE = "/tmp/felisros-batch"
@@ -334,7 +334,7 @@ class SshClient:
                 pass
         self.helper = None
 
-    def install_software(self, archive, port=8737, autostart=True, report=None):
+    def install_software(self, archive, port=8737, report=None):
         temp = "{}-{}".format(REMOTE_BASE, secrets.token_hex(3))
         try:
             self.emit("连接设备", "info")
@@ -392,60 +392,10 @@ class SshClient:
                 return {"ok": False, "reason": "安装失败: " + output[-300:]}
 
             launcher = home + "/.local/bin/felisros"
-            if autostart:
-                self.emit("配置开机自启并启动服务", "info")
-                unit = (
-                    "[Unit]\n"
-                    "Description=felisros installer UI\n"
-                    "After=network-online.target\n\n"
-                    "[Service]\n"
-                    "Type=simple\n"
-                    "ExecStart={launcher} --no-browser --port {port}\n"
-                    "Restart=on-failure\n"
-                    "RestartSec=5\n\n"
-                    "[Install]\n"
-                    "WantedBy=default.target\n"
-                ).format(launcher=launcher, port=port)
-                if not self.upload(unit.encode("utf-8"), temp + "/felisros.service"):
-                    return {"ok": False, "reason": "上传服务定义失败"}
-
-                setup = (
-                    "mkdir -p {dir}; "
-                    "cp {unit} {dir}/felisros.service; "
-                    "loginctl enable-linger 2>/dev/null || true; "
-                    "if [ \"$(id -u)\" -ne 0 ] "
-                    "&& XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user daemon-reload "
-                    "&& XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user enable felisros.service "
-                    "&& XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user restart felisros.service; then "
-                    "crontab -l 2>/dev/null | grep -v 'felisros --no-browser' | crontab - 2>/dev/null || true; "
-                    "echo AUTOSTART_SYSTEMD; "
-                    "else "
-                    "(crontab -l 2>/dev/null | grep -v 'felisros --no-browser'; "
-                    "echo '@reboot {launcher} --no-browser --port {port} >/dev/null 2>&1 &') | crontab -; "
-                    "pkill -f '[a]pp.py --no-browser --port {port}' 2>/dev/null || true; "
-                    "nohup {launcher} --no-browser --port {port} >/dev/null 2>&1 & "
-                    "echo AUTOSTART_CRONTAB; "
-                    "fi"
-                ).format(
-                    dir=shlex.quote(home + "/.config/systemd/user"),
-                    unit=shlex.quote(temp + "/felisros.service"),
-                    launcher=shlex.quote(launcher),
-                    port=int(port),
-                )
-                ok, output = self.run(setup, timeout=180)
-                if not ok:
-                    return {"ok": False, "reason": "开机自启配置失败: " + output[-300:]}
-                mode = "systemd" if "AUTOSTART_SYSTEMD" in output else "crontab"
-                self.emit("开机自启方式: " + mode, "ok")
-            else:
-                self.emit("启动 felisros 服务", "info")
-                self.run(
-                    "pkill -f '[a]pp.py --no-browser --port {}' 2>/dev/null || true; "
-                    "nohup {} --no-browser --port {} >/dev/null 2>&1 &".format(
-                        int(port), shlex.quote(launcher), int(port)
-                    ),
-                    timeout=60,
-                )
+            self.emit("在后台启动 felisros（不设置开机自启）", "info")
+            ok, output = self.run(service.start_command(launcher, port), timeout=120)
+            if not ok:
+                return {"ok": False, "reason": "启动服务失败: " + output[-300:]}
 
             ok, output = self.run(
                 "python3 -c \"import time,urllib.request,sys\n"
@@ -462,12 +412,14 @@ class SshClient:
             )
             if not ok:
                 _, diag = self.run(
-                    "echo '[journal]'; "
-                    "XDG_RUNTIME_DIR=/run/user/$(id -u) journalctl --user -u felisros.service "
-                    "-n 30 --no-pager 2>&1 | tail -40; "
+                    "echo '[proc]'; ps -ef 2>/dev/null "
+                    "| grep '[a]pp.py --no-browser' || echo '进程未在运行'; "
+                    "echo '[log]'; tail -40 {} 2>/dev/null || echo '（无日志）'; "
                     "echo '[foreground]'; "
                     "timeout 6 {launcher} --no-browser --port {port} 2>&1 | tail -40".format(
-                        launcher=shlex.quote(launcher), port=int(port)
+                        shlex.quote(home + "/.local/share/felisros/app/log/app-run.log"),
+                        launcher=shlex.quote(launcher),
+                        port=int(port),
                     ),
                     timeout=60,
                 )
@@ -488,7 +440,7 @@ class SshClient:
             self.cleanup()
             self.run("rm -rf {}".format(shlex.quote(temp)), timeout=60)
 
-    def update_software(self, seed, archive=None, port=8737, autostart=True, report=None):
+    def update_software(self, seed, archive=None, port=8737, report=None):
         temp = "{}-{}".format(REMOTE_BASE, secrets.token_hex(3))
         try:
             ok, output = self.run(
@@ -517,7 +469,7 @@ class SshClient:
                 self.emit("设备尚未安装 felisros，改为直接分发当前版本", "info")
                 if not archive:
                     return {"ok": False, "reason": "设备未安装 felisros，且没有可用的安装包"}
-                first = self.install_software(archive, port, autostart)
+                first = self.install_software(archive, port)
                 if not first.get("ok"):
                     return first
                 first["kind"] = "update"
@@ -540,18 +492,9 @@ class SshClient:
                 item["reason"] = "更新完成" if item["ok"] else "更新失败"
             if item.get("ok"):
                 self.emit("更新已写入，正在重启设备上的服务", "info")
-                restart = (
-                    "if XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user is-active "
-                    "felisros.service >/dev/null 2>&1; then "
-                    "XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user restart felisros.service; "
-                    "else pkill -f '[a]pp.py --no-browser --port {}' 2>/dev/null || true; "
-                    "nohup {} --no-browser --port {} >/dev/null 2>&1 & fi"
-                ).format(
-                    int(port),
-                    shlex.quote(home + "/.local/bin/felisros"),
-                    int(port),
+                self.run(
+                    service.start_command(home + "/.local/bin/felisros", port), timeout=120
                 )
-                self.run(restart, timeout=60)
             if report:
                 report(item["reason"], "ok" if item["ok"] else "err")
             return item

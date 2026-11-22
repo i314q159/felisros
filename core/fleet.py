@@ -1,4 +1,4 @@
-import copy
+﻿import copy
 import os
 import threading
 import time
@@ -85,7 +85,6 @@ class Fleet:
         workers=3,
         task=None,
         port=8737,
-        autostart=True,
         update_seed="",
     ):
         with self.lock:
@@ -124,7 +123,7 @@ class Fleet:
             self.devices = devices
             self.reports = []
             self.task = task
-            self.bus = EventBus()
+            self.bus = EventBus(self.bus.seq)
             self.cancel_flag = threading.Event()
             self.running = True
             self.finished = False
@@ -140,7 +139,6 @@ class Fleet:
                 task,
                 archive,
                 port,
-                autostart,
                 update_seed or fleet_config.get("update_seed") or "",
             ),
             daemon=True,
@@ -175,23 +173,31 @@ class Fleet:
             "sources": result.get("sources") or [],
         }
 
-    def _execute(
-        self, client, device, task, deploy, versions, archive, port, autostart, seed
-    ):
+    def _execute(self, client, device, task, deploy, versions, archive, port, seed):
+        started = time.monotonic()
+        result, done_text = self._dispatch(
+            client, device, task, deploy, versions, archive, port, seed
+        )
+        # 用时从任务真正开始执行时算起，排队等待的时间不计入单台设备
+        if not result.get("elapsed"):
+            result["elapsed"] = round(time.monotonic() - started, 1)
+        return result, done_text
+
+    def _dispatch(self, client, device, task, deploy, versions, archive, port, seed):
         if task == "software":
-            return client.install_software(archive, port, autostart), "软件分发完成"
+            return client.install_software(archive, port), "软件分发完成"
 
         if task == "update":
             device["stage"] = "更新软件"
             self.device_event(device["ip"], "run", "从更新源拉取最新版本", "更新软件")
-            result = client.update_software(seed, archive, port, autostart)
+            result = client.update_software(seed, archive, port)
             device["arch"] = result.get("arch") or ""
             return result, "更新完成"
 
         if task == "update_rollout":
             device["stage"] = "更新软件"
             self.device_event(device["ip"], "run", "从更新源拉取最新版本", "更新软件")
-            first = client.update_software(seed, archive, port, autostart)
+            first = client.update_software(seed, archive, port)
             device["arch"] = first.get("arch") or ""
             if not first.get("ok"):
                 return first, "软件更新失败"
@@ -212,8 +218,8 @@ class Fleet:
 
         if task == "rollout":
             device["stage"] = "分发软件"
-            self.device_event(device["ip"], "run", "分发软件并设置开机自启", "分发软件")
-            first, reason = client.install_software(archive, port, autostart), "软件分发完成"
+            self.device_event(device["ip"], "run", "分发软件并在后台启动", "分发软件")
+            first, reason = client.install_software(archive, port), "软件分发完成"
             device["arch"] = first.get("arch") or ""
             if not first.get("ok"):
                 return first, "软件分发失败"
@@ -234,7 +240,7 @@ class Fleet:
         return client.install(deploy, versions), "ROS 安装完成"
 
     def _run(
-        self, devices, deploy, versions, workers, task, archive, port, autostart, seed
+        self, devices, deploy, versions, workers, task, archive, port, seed
     ):
         if task in ("ros", "rollout", "update_rollout") and not deploy:
             self.log("", "缺少部署配置，批量任务终止", "err")
@@ -251,6 +257,7 @@ class Fleet:
             pool_size = max(1, min(int(workers or 3), 99))
             with ThreadPoolExecutor(max_workers=pool_size) as pool:
                 futures = {}
+                started_at = {}
                 for device in devices:
                     if self.cancel_flag.is_set():
                         break
@@ -268,19 +275,18 @@ class Fleet:
                         versions,
                         archive,
                         port,
-                        autostart,
                         seed,
                     )
                     futures[job] = device
+                    started_at[device["ip"]] = time.monotonic()
                 for future in as_completed(futures):
                     device = futures[future]
-                    started = time.monotonic()
                     try:
                         result, done_text = future.result()
                     except Exception as exc:
                         result = {"ok": False, "reason": str(exc)}
                         done_text = "任务异常"
-                    elapsed = time.monotonic() - started
+                    elapsed = time.monotonic() - started_at.get(device["ip"], time.monotonic())
                     ok = bool(result.get("ok"))
                     reason = self._clean(result.get("reason") or "", device)
                     item = self._report(device, result, elapsed)

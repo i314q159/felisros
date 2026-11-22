@@ -22,10 +22,12 @@ MAX_EVENTS = 4000
 
 
 class EventBus:
-    def __init__(self):
+    def __init__(self, seq=0):
         self.lock = threading.Lock()
         self.events = []
-        self.seq = 0
+        # seq 跨任务单调递增：前端多个页面各自持有游标，重建总线时若 seq 归零，
+        # 未重置游标的那一页会永远收不到新事件。
+        self.seq = seq
 
     def push(self, payload):
         with self.lock:
@@ -108,7 +110,7 @@ class Installer:
             if self.state["running"]:
                 return False, "已经有安装任务在运行"
             self.sudo_password = sudo_password or ""
-            self.bus = EventBus()
+            self.bus = EventBus(self.bus.seq)
             self.state = self._idle()
             self.state["running"] = True
             self.state["message"] = "准备中"

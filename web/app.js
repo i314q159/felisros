@@ -34,15 +34,22 @@
 
 const $ = (id) => document.getElementById(id);
 
-function line(text, level) {
+function appendLog(boxId, text, level, keep) {
+  const box = $(boxId);
+  if (!box) return;
   const el = document.createElement("div");
   el.className = level || "out";
-  if (level === "cmd") el.textContent = "$ " + text;
+  // 后端部分命令行已经带 "$ " 前缀，这里只在缺失时补上
+  if (level === "cmd" && text.indexOf("$ ") !== 0) el.textContent = "$ " + text;
   else el.textContent = text;
-  const box = $("log");
   const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
   box.appendChild(el);
+  if (keep) while (box.childNodes.length > keep) box.removeChild(box.firstChild);
   if (stick) box.scrollTop = box.scrollHeight;
+}
+
+function line(text, level) {
+  appendLog("log", text, level);
 }
 
 function show(view) {
@@ -50,7 +57,7 @@ function show(view) {
     $("view-" + name).hidden = name !== view;
   });
   state.view = view;
-  $("tab-single").classList.toggle("is-on", ["config", "run", "done", "update"].indexOf(view) >= 0);
+  $("tab-single").classList.toggle("is-on", ["config", "run", "done"].indexOf(view) >= 0);
   $("tab-fleet").classList.toggle("is-on", view === "fleet");
   $("tab-generator").classList.toggle("is-on", view === "generator");
   $("tab-distribute").classList.toggle("is-on", view === "distribute");
@@ -120,22 +127,24 @@ function renderSudoHint(env) {
 function renderOptions(env) {
   const versions = env.catalog.filter((item) => item.available);
   const list = versions.length ? versions : env.catalog;
-  const versionHtml = list
+  const versionItems = list
     .map((item) => {
       const tag = item.status === 0 ? "EOL" : "LTS";
       const flag = item.recommended ? "（推荐）" : "";
       return `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)} · ${escapeHtml(item.ros)} ${tag}${flag}</option>`;
     })
     .join("");
-  $("version").innerHTML = versionHtml;
+  $("version").innerHTML =
+    '<option value="auto">自动（按系统推荐）</option>' + versionItems;
   const recommended = env.recommend;
   if (recommended && list.some((item) => item.name === recommended)) {
     $("version").value = recommended;
   }
-  $("gen-version").innerHTML = versionHtml;
+  $("gen-version").innerHTML =
+    '<option value="auto">自动（按系统推荐）</option>' + versionItems;
   $("gen-version").value = $("version").value;
   $("quick-version").innerHTML =
-    '<option value="auto">自动（按目标设备选择）</option>' + versionHtml;
+    '<option value="auto">自动（按目标设备选择）</option>' + versionItems;
   $("quick-version").value = "auto";
   const mirrorHtml =
     `<option value="auto">自动测速选择</option>` +
@@ -177,24 +186,48 @@ function applyEvent(event) {
   if (event.type === "done") finish(event);
 }
 
-function poll() {
-  stopPoll();
-  state.timer = setInterval(async () => {
+// 统一轮询：请求未返回时跳过本轮，网络异常只提示一次并继续重试
+function startPolling(timerKey, interval, run, onError) {
+  stopPolling(timerKey);
+  const session = { busy: false, warned: false };
+  state[timerKey] = setInterval(async () => {
+    if (session.busy) return;
+    session.busy = true;
     try {
+      await run();
+      session.warned = false;
+    } catch (exc) {
+      if (!session.warned) {
+        session.warned = true;
+        if (onError) onError(exc);
+      }
+    } finally {
+      session.busy = false;
+    }
+  }, interval);
+}
+
+function stopPolling(timerKey) {
+  if (state[timerKey]) clearInterval(state[timerKey]);
+  state[timerKey] = null;
+}
+
+function poll() {
+  startPolling(
+    "timer",
+    350,
+    async () => {
       const data = await fetch(`/api/events?since=${state.since}`).then((r) => r.json());
       data.events.forEach(applyEvent);
       const last = data.events[data.events.length - 1];
       if (last) state.since = last.seq;
-    } catch (exc) {
-      line("与本地服务失去连接", "err");
-      stopPoll();
-    }
-  }, 350);
+    },
+    () => line("与本地服务失去连接，正在重试…", "err")
+  );
 }
 
 function stopPoll() {
-  if (state.timer) clearInterval(state.timer);
-  state.timer = null;
+  stopPolling("timer");
 }
 
 function finish(event) {
@@ -313,9 +346,11 @@ function localPayload(config) {
 }
 
 function ensureOption(select, value) {
-  if (!value || value === "auto") return;
+  if (!value) return;
   const exists = Array.from(select.options).some((option) => option.value === value);
   if (!exists) {
+    // auto 是内置语义，不作为自定义配置项追加
+    if (value === "auto") return;
     const option = document.createElement("option");
     option.value = value;
     option.textContent = value + "（配置文件）";
@@ -382,13 +417,7 @@ async function versionsClear() {
 }
 
 function fleetLine(text, level) {
-  const el = document.createElement("div");
-  el.className = level || "out";
-  el.textContent = text;
-  const box = $("fleet-log");
-  const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
-  box.appendChild(el);
-  if (stick) box.scrollTop = box.scrollHeight;
+  appendLog("fleet-log", text, level);
 }
 
 function markFleetDirty() {
@@ -546,23 +575,44 @@ async function discoverNetworks({ listId, inputId, linuxOnlyId }) {
 
 function applyFleetNetwork(network) {
   const list = Array.isArray(network) ? network : network === "auto" || !network ? [] : [network];
-  $("net-input").value = list.join(", ");
-  document.querySelectorAll("#net-list input").forEach((box) => {
-    box.checked = list.length === 0;
+  const boxes = Array.from(document.querySelectorAll("#net-list input"));
+  const known = boxes.map((box) => box.value);
+  boxes.forEach((box) => {
+    // 恢复清单里的网段时勾选对应网卡，避免清单网段与界面显示不一致
+    box.checked = list.length === 0 ? true : list.indexOf(box.value) >= 0;
   });
+  // 网卡已经覆盖的网段不再重复填进「额外扫描网段」
+  $("net-input").value = list.filter((item) => known.indexOf(item) < 0).join(", ");
+}
+
+// 扫描期间禁用按钮并提示，避免重复点击触发多轮嗅探
+async function busyButton(buttonId, busyText, fn) {
+  const button = $(buttonId);
+  if (!button) return fn();
+  const label = button.textContent;
+  button.disabled = true;
+  button.textContent = busyText;
+  try {
+    return await fn();
+  } finally {
+    button.disabled = false;
+    button.textContent = label;
+  }
 }
 
 async function scanNetwork() {
-  const data = await discoverNetworks({
-    listId: "net-list",
-    inputId: "net-input",
-    linuxOnlyId: "linux-only",
+  await busyButton("net-scan", "扫描中…", async () => {
+    const data = await discoverNetworks({
+      listId: "net-list",
+      inputId: "net-input",
+      linuxOnlyId: "linux-only",
+    });
+    const logs = (data.logs || []).concat("发现 " + data.devices.length + " 台设备");
+    $("discover-log").textContent = logs.join("\n");
+    renderDevices(data.devices);
+    state.fleetFromServer = false;
+    state.fleetDirty = true;
   });
-  const logs = (data.logs || []).concat("发现 " + data.devices.length + " 台设备");
-  $("discover-log").textContent = logs.join("\n");
-  renderDevices(data.devices);
-  state.fleetFromServer = false;
-  state.fleetDirty = true;
 }
 
 function renderPresetList(presets) {
@@ -637,7 +687,6 @@ async function importFleetText(text) {
     $("fleet-sudo").value = "";
     $("fleet-task").value = data.fleet.task || "rollout";
     $("fleet-port").value = data.fleet.port || 8737;
-    $("fleet-autostart").checked = data.fleet.autostart !== false;
     show("fleet");
     renderDevices(data.fleet.devices);
     if (data.fleet.deploy) {
@@ -730,7 +779,6 @@ function collectFleet() {
     update_seed: $("fleet-update-seed").value.trim(),
     preset: $("preset-name").value.trim() || "default",
     port: Number($("fleet-port").value) || 8737,
-    autostart: $("fleet-autostart").checked,
     defaults: {
       username: $("fleet-user").value.trim() || "root",
       password: $("fleet-password").value,
@@ -786,14 +834,14 @@ function applyFleetEvent(event) {
 }
 
 function stopFleetPoll() {
-  if (state.fleetTimer) clearInterval(state.fleetTimer);
-  state.fleetTimer = null;
+  stopPolling("fleetTimer");
 }
 
 function pollFleet() {
-  stopFleetPoll();
-  state.fleetTimer = setInterval(async () => {
-    try {
+  startPolling(
+    "fleetTimer",
+    400,
+    async () => {
       const data = await fetch(`/api/fleet/events?since=${state.fleetSince}`).then((r) => r.json());
       data.events.forEach(applyFleetEvent);
       const last = data.events[data.events.length - 1];
@@ -804,11 +852,9 @@ function pollFleet() {
         }
       });
       if (data.state.reports) renderReports(data.state.reports);
-    } catch (exc) {
-      fleetLine("与本地服务失去连接", "err");
-      stopFleetPoll();
-    }
-  }, 400);
+    },
+    () => fleetLine("与本地服务失去连接，正在重试…", "err")
+  );
 }
 
 async function startFleet() {
@@ -816,7 +862,6 @@ async function startFleet() {
     workers: Number($("fleet-workers").value),
     task: $("fleet-task").value,
     port: Number($("fleet-port").value) || 8737,
-    autostart: $("fleet-autostart").checked,
     update_seed: $("fleet-update-seed").value.trim(),
     preset: $("preset-name").value.trim() || "default",
   };
@@ -867,7 +912,6 @@ async function quickStart() {
     task: "rollout",
     update_seed: "",
     port: 8737,
-    autostart: true,
     preset: "",
     defaults: { username, password, sudo_password: sudo },
     devices: selected.map((device) => ({
@@ -886,7 +930,6 @@ async function quickStart() {
     workers: Number($("fleet-workers").value),
     task: "rollout",
     port: 8737,
-    autostart: true,
     update_seed: "",
     preset: "",
     fleet,
@@ -972,7 +1015,6 @@ async function buildGenerated() {
     payload.task = $("gen-task").value;
     payload.update_seed = $("gen-update-seed").value.trim();
     payload.port = Number($("gen-port").value) || 8737;
-    payload.autostart = $("gen-autostart").checked;
     payload.network = $("gen-network").value.trim() || "auto";
     payload.defaults = {
       username: $("gen-user").value.trim() || "root",
@@ -1040,13 +1082,7 @@ async function applyGenerated() {
 }
 
 function distLine(text, level) {
-  const el = document.createElement("div");
-  el.className = level || "out";
-  el.textContent = text;
-  const box = $("dist-log");
-  const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
-  box.appendChild(el);
-  if (stick) box.scrollTop = box.scrollHeight;
+  appendLog("dist-log", text, level);
 }
 
 function distPlaceholder(device, key) {
@@ -1147,14 +1183,16 @@ function setDistDeviceStatus(ip, status, reason) {
 }
 
 async function distScan() {
-  const data = await discoverNetworks({
-    listId: "dist-net-list",
-    inputId: "dist-net-input",
-    linuxOnlyId: "dist-linux-only",
+  await busyButton("dist-scan", "扫描中…", async () => {
+    const data = await discoverNetworks({
+      listId: "dist-net-list",
+      inputId: "dist-net-input",
+      linuxOnlyId: "dist-linux-only",
+    });
+    const logs = (data.logs || []).concat("发现 " + data.devices.length + " 台设备");
+    $("dist-discover-log").textContent = logs.join("\n");
+    renderDistDevices(data.devices);
   });
-  const logs = (data.logs || []).concat("发现 " + data.devices.length + " 台设备");
-  $("dist-discover-log").textContent = logs.join("\n");
-  renderDistDevices(data.devices);
 }
 
 function renderDistReports(reports) {
@@ -1205,14 +1243,14 @@ function applyDistEvent(event) {
 }
 
 function stopDistPoll() {
-  if (state.distTimer) clearInterval(state.distTimer);
-  state.distTimer = null;
+  stopPolling("distTimer");
 }
 
 function pollDistFleet() {
-  stopDistPoll();
-  state.distTimer = setInterval(async () => {
-    try {
+  startPolling(
+    "distTimer",
+    400,
+    async () => {
       const data = await fetch(`/api/fleet/events?since=${state.distSince}`).then((r) => r.json());
       data.events.forEach(applyDistEvent);
       const last = data.events[data.events.length - 1];
@@ -1223,11 +1261,9 @@ function pollDistFleet() {
         }
       });
       if (data.state.reports) renderDistReports(data.state.reports);
-    } catch (exc) {
-      distLine("与本地服务失去连接", "err");
-      stopDistPoll();
-    }
-  }, 400);
+    },
+    () => distLine("与本地服务失去连接，正在重试…", "err")
+  );
 }
 
 async function startDistDeploy() {
@@ -1241,7 +1277,6 @@ async function startDistDeploy() {
     network: $("dist-net-input").value.trim() || "auto",
     task: "software",
     port,
-    autostart: $("dist-autostart").checked,
     preset: "",
     defaults: {
       username: $("dist-user").value.trim() || "root",
@@ -1261,7 +1296,6 @@ async function startDistDeploy() {
     workers: Number($("dist-workers").value),
     task: "software",
     port,
-    autostart: fleet.autostart,
     update_seed: "",
     preset: "",
     fleet,
@@ -1277,13 +1311,7 @@ async function startDistDeploy() {
 }
 
 function updateLine(text, level) {
-  const el = document.createElement("div");
-  el.className = level || "out";
-  el.textContent = text;
-  const box = $("update-log");
-  box.appendChild(el);
-  while (box.childNodes.length > 300) box.removeChild(box.firstChild);
-  box.scrollTop = box.scrollHeight;
+  appendLog("update-log", text, level, 300);
 }
 
 function renderRole(caps) {
@@ -1380,14 +1408,14 @@ async function applyUpdate() {
 }
 
 function stopUpdatePoll() {
-  if (state.updateTimer) clearInterval(state.updateTimer);
-  state.updateTimer = null;
+  stopPolling("updateTimer");
 }
 
 function startUpdatePoll() {
-  stopUpdatePoll();
-  state.updateTimer = setInterval(async () => {
-    try {
+  startPolling(
+    "updateTimer",
+    900,
+    async () => {
       const data = await fetch("/api/update/events?since=" + state.updateSince).then((r) => r.json());
       data.events.forEach((event) => updateLine(event.text, event.level));
       const last = data.events[data.events.length - 1];
@@ -1396,10 +1424,9 @@ function startUpdatePoll() {
         state.version = data.version;
         loadPeers();
       }
-    } catch (exc) {
-      stopUpdatePoll();
-    }
-  }, 900);
+    },
+    () => updateLine("与本地服务失去连接，正在重试…", "err")
+  );
 }
 
 async function probePeers() {
@@ -1514,7 +1541,7 @@ function bind() {
     markFleetDirty();
     show(state.view);
   });
-  ["fleet-port", "fleet-autostart", "fleet-update-seed"].forEach((id) => $(id).addEventListener("input", markFleetDirty));
+  ["fleet-port", "fleet-update-seed"].forEach((id) => $(id).addEventListener("input", markFleetDirty));
   $("dist-copy-command").addEventListener("click", guard(async () => {
     if (state.lan) await copyText(state.lan.command, $("dist-copy-command"));
   }));
@@ -1654,7 +1681,6 @@ function restoreFleet(data) {
   $("fleet-port").value = fleet.port || 8737;
   $("fleet-update-seed").value = fleet.update_seed || "";
   if (fleet.preset) $("preset-name").value = fleet.preset;
-  $("fleet-autostart").checked = fleet.autostart !== false;
   show(state.view);
   renderDevices(fleet.devices);
   if (fleet.deploy) $("fleet-deploy-text").value = JSON.stringify(fleet.deploy, null, 2);

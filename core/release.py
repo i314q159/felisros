@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -294,9 +295,23 @@ def restart_service(app_root, port=8737, exit_current=False):
     except (OSError, subprocess.SubprocessError):
         pass
     try:
-        args = [sys.executable, os.path.join(app_root, "app.py"), "--no-browser", "--port", str(port)]
+        argv = [
+            sys.executable,
+            os.path.join(app_root, "app.py"),
+            "--no-browser",
+            "--port",
+            str(port),
+        ]
+        command = argv
+        if exit_current and os.name != "nt":
+            # 先让当前进程退出再启动新实例，否则新实例抢不到端口
+            command = [
+                "sh",
+                "-c",
+                "sleep 1.5; exec " + " ".join(shlex.quote(part) for part in argv),
+            ]
         subprocess.Popen(
-            args,
+            command,
             cwd=app_root,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -304,7 +319,7 @@ def restart_service(app_root, port=8737, exit_current=False):
             start_new_session=True,
         )
         if exit_current:
-            time.sleep(0.4)
+            time.sleep(0.3)
             os._exit(0)
         return True
     except OSError:

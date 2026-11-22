@@ -67,7 +67,7 @@ Python 只用标准库，前端资源全部随项目附带、不加载任何 CDN
 | Linux 真实安装 ROS | `sudo`、`apt-get` 或 `aptitude`、`curl` 或 `wget`、`gpg`、`coreutils`（`tee`、`cp`）、`sed` |
 | 设备发现 | `ip`、`ping`（iproute2 / iputils） |
 | 局域网批量部署与遥控 | `ssh` 客户端；目标设备需可 SSH 登录并具备 sudo 权限 |
-| 开机自启与更新后重启（可选） | `systemctl --user`；缺失不影响主流程 |
+| 后台运行与退出 | 分发后自动后台启动（不设置开机自启），设备上可用 `felisros --stop` 退出 |
 | 安装 / 卸载 / 打包脚本 | POSIX `sh`、`cp`、`sed`、`pkill`（卸载）、`crontab`（可选清理） |
 
 Windows / macOS 作为控制端只需要 Python 3 与浏览器；上面的系统命令只在被控的 Linux 设备上执行。
@@ -104,6 +104,7 @@ python3 app.py
 | `--apply-update` | 从更新源拉取并安装最新版本后退出（仅 Linux） |
 | `--update-seed URL` | 手动指定更新源，如 `http://192.168.1.20:8737` |
 | `--no-restart` | 更新后不自动重启服务，配合 `--apply-update` 使用 |
+| `--stop` | 停止后台运行的 felisros（分发时自动启动的那个）后退出，同时清掉旧版本留下的 systemd / crontab 自启项 |
 
 `--deploy` 无界面部署时，sudo 密码可用环境变量 `FELISROS_SUDO_PASSWORD` 提供，避免写进命令行。
 
@@ -134,6 +135,8 @@ felisros
 `install.sh` 把程序复制到 `~/.local/share/felisros/app`，启动器放到 `~/.local/bin/felisros`，桌面项放到 `~/.local/share/applications/felisros.desktop`。如果 `~/.local/bin` 不在 PATH 里，脚本会提示添加。卸载用 `./uninstall.sh`；导入过的版本清单不会自动删除。
 
 启动器 `felisros` 直接打开网页端界面，无需任何第三方依赖。网页端同时用于局域网分发与本地控制；默认监听所有网卡地址，可用 `--host 127.0.0.1` 改为只监听本机。
+
+注册桌面入口和 `install.sh` 都不会写开机自启：远程分发时由控制端在目标设备上后台拉起一次（`setsid` 启动，SSH 断开也继续跑），设备重启后需要时手动运行 `felisros`。退出后台服务用 `felisros --stop`。
 
 ## 配置文件一键部署
 
@@ -235,7 +238,7 @@ curl -fsSL http://<Windows 的局域网 IP>:8737/install.sh | sh
 
 1. 勾选本机网卡（可多选，也可填写额外 CIDR；全部留空则扫描所有网卡），点「扫描设备」，默认只列出 Linux 设备。
 2. 勾选目标设备，可逐台覆盖用户名 / SSH 密码 / Sudo 密码，也可在「统一登录信息」里一次填好（SSH 密码留空表示使用密钥登录）。
-3. 设置并发数、服务端口与开机自启，点「批量分发软件」。
+3. 设置并发数与服务端口，点「批量分发软件」。分发完成后目标设备上的 felisros 会在后台启动（不设置开机自启）；需要退出时在设备上执行 `felisros --stop`，重启后手动运行 `felisros` 即可。
 
 它与「局域网批量部署」共用同一套批量引擎（`software` 任务）和结果回传：每台设备的架构、用时与成功/失败原因直接显示在面板下方，也可点「导出报告 JSON」保存。目标机只需能 SSH 登录、有 `python3`，无需预装任何客户端。被动安装与主动分发可以并存——想让别人自己装就发安装命令，想统一部署就用这个面板。
 
@@ -265,7 +268,7 @@ python3 app.py --apply-update --update-seed http://192.168.1.20:8737
 
 批量部署支持五种任务，在「部署任务」下拉框切换：
 
-- **先分发 felisros 软件，再遥控安装 ROS（`rollout`，默认）**：这是完整的两步流水线。第一步通过 SSH 把安装包推到设备、装到用户目录、启动服务并设置开机自启（systemd，失败回退 crontab）。第二步把选好的 `felisros/deploy/v1` 配置文件下发到设备，**调用设备上刚装好的 felisros 本机 API 遥控执行安装**，完成后把成功/失败、ROS 版本、镜像源、原因和用时回传到 Windows 端。目标机只需 SSH 和 `python3`，不用预装任何东西。
+- **先分发 felisros 软件，再遥控安装 ROS（`rollout`，默认）**：这是完整的两步流水线。第一步通过 SSH 把安装包推到设备、装到用户目录并在后台启动服务（不设置开机自启，也不会写 systemd 单元或 crontab）。第二步把选好的 `felisros/deploy/v1` 配置文件下发到设备，**调用设备上刚装好的 felisros 本机 API 遥控执行安装**，完成后把成功/失败、ROS 版本、镜像源、原因和用时回传到 Windows 端。目标机只需 SSH 和 `python3`，不用预装任何东西。
 - **先更新 felisros，再遥控安装 ROS（`update_rollout`）**：让已装 felisros 的设备从指定更新源拉取最新版本、重启服务，再把配置下发并遥控安装 ROS。未安装 felisros 的设备会自动改为分发当前版本。
 - **只分发 felisros 软件（`software`）**：仅做软件分发，不安装 ROS。
 - **只更新已安装的 felisros（`update`）**：设备从更新源拉取新版本、校验、替换并重启；回传更新后的版本号和用时。
@@ -294,7 +297,6 @@ python3 app.py --apply-update --update-seed http://192.168.1.20:8737
   "update_seed": "http://192.168.1.20:8737",
   "preset": "lab",
   "port": 8737,
-  "autostart": true,
   "defaults": {
     "username": "pi",
     "password": "${FLEET_PASSWORD}",
@@ -322,7 +324,7 @@ python3 app.py --apply-update --update-seed http://192.168.1.20:8737
 - `task`：`rollout` 表示先推送安装包并装好 felisros，再把 `deploy` 下发并遥控安装 ROS、回传结果；`update_rollout` 先让设备从更新源升级 felisros 再做同样的事；`software` 只做软件分发，`update` 只升级 felisros，`ros` 只在目标机临时运行安装器。省略时：带 `deploy` 则用 `rollout`，带 `versions` 用 `ros`，否则 `software`。
 - `update_seed`：更新任务的来源地址，留空则用控制端本机。完整示例见 `examples/fleet-update.example.json`。
 - `preset`：引用 `presets.json` 里保存的用户名/密码预设；批量启动时自动套用到所有目标设备，密码不会出现在 API 返回或日志里。
-- `port` / `autostart`：软件安装的服务端口（默认 8737）和是否设置开机自启（默认 true）；`rollout` 任务也用它。
+- `port`：软件在目标设备上监听的服务端口（默认 8737）；`rollout` 任务也用它。分发后只在本次会话里后台启动，不设置开机自启（旧清单里的 `autostart` 字段会被忽略）。
 - `defaults` 是全局默认凭据；`devices[]` 里的 `username` / `password` / `sudo_password` 会覆盖默认值。
 - `sudo_password` 省略时自动使用同设备的 SSH 密码。
 - 密码字段支持 `${环境变量名}`，启动时从环境变量解析；推荐用它代替明文。
@@ -359,7 +361,7 @@ python3 app.py --apply-update --update-seed http://192.168.1.20:8737
 
 1. **系统卡**：发行版、代号、架构、磁盘余量、已装 ROS 版本。
 2. **模式选择**：全自动（测速 + 推荐版本 + 空间不足降级）或自定义（版本 / 桌面版 / 镜像源）。
-3. **执行**：七步进度条 + 实时滚动的命令日志，可随时取消。
+3. **执行**：六步进度条 + 实时滚动的命令日志，可随时取消。
 4. **结果**：本次自动选择清单 + 可直接复制的验证命令（如 `ros2 run turtlesim turtlesim_node`）。
 
 ## core 包（函数封装清单）
@@ -406,6 +408,7 @@ felisros/
 │   ├── peers.py            UDP 广播互发现、更新检查与自动更新
 │   ├── discovery.py        局域网扫描与设备识别
 │   ├── remote.py           SSH 上传、密码认证与远程安装/更新
+│   ├── service.py          后台服务启动与 --stop 停止逻辑
 │   ├── fleet.py            批量部署编排与事件
 │   ├── mirrors.py          系统镜像表、测速、写源与备份
 │   ├── sysrepo.py          系统源切换流程
@@ -413,7 +416,7 @@ felisros/
 │   ├── keys.py             公钥下载、指纹校验、导入
 │   ├── rosrepo.py          ROS 源写入、坏包探测、重试
 │   ├── shellenv.py         shell 配置与中文路径修复
-│   └── installer.py        七步编排、事件总线
+│   └── installer.py        六步编排、事件总线
 ├── web/
 │   ├── index.html
 │   ├── style.css

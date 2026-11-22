@@ -12,7 +12,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from core import capabilities, config, discovery, peers, release, ros
+from core import capabilities, config, discovery, peers, release, ros, service
 from core.config import ConfigError
 from core.fleet import Fleet
 from core.installer import STEPS, EventBus, Installer
@@ -278,10 +278,9 @@ def build_config(payload):
         except (TypeError, ValueError):
             port = 8737
         raw_fleet["port"] = max(1, min(65535, port))
-        raw_fleet["autostart"] = bool(payload.get("autostart", True))
         summary = config.fleet_summary(checked)
         labels = {
-            "software": "只分发 felisros 软件（启动 + 开机自启）",
+            "software": "只分发 felisros 软件（分发后后台启动）",
             "ros": "只在目标机临时运行安装器安装 ROS",
             "rollout": "先分发 felisros 软件，再遥控安装 ROS 并回传结果",
             "update": "让目标机从更新源拉取 felisros 最新版本并重启服务",
@@ -723,7 +722,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/api/fleet/save":
             try:
-                fleet = config.parse_fleet(payload)
+                fleet = config.parse_fleet(
+                    config.merge_fleet_secrets(payload, config.current_fleet())
+                )
                 path = config.save_fleet(fleet)
             except (ConfigError, OSError) as exc:
                 return self.fail(exc)
@@ -747,7 +748,9 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 stored = config.current_fleet()
                 if payload.get("fleet"):
-                    fleet = config.parse_fleet(payload["fleet"])
+                    fleet = config.parse_fleet(
+                        config.merge_fleet_secrets(payload["fleet"], stored)
+                    )
                     config.save_fleet(fleet)
                 else:
                     fleet = stored
@@ -782,7 +785,6 @@ class Handler(BaseHTTPRequestHandler):
                     workers=payload.get("workers") or 3,
                     task=task,
                     port=port,
-                    autostart=payload.get("autostart", True) is not False,
                     update_seed=seed,
                 )
             except (ConfigError, OSError) as exc:
@@ -979,7 +981,15 @@ def main(argv=None):
     parser.add_argument(
         "--no-restart", action="store_true", help="更新后不自动重启服务"
     )
+    parser.add_argument(
+        "--stop", action="store_true", help="停止后台运行的 felisros 服务后退出"
+    )
     args = parser.parse_args(argv)
+
+    if args.stop:
+        ok, message = service.stop_local()
+        print(message)
+        return 0 if ok else 2
 
     if args.check_update or args.apply_update:
         settings = release.load_auto()

@@ -402,7 +402,6 @@ def parse_fleet(data):
         "update_seed": _text(data.get("update_seed") or "", "更新源地址", 200),
         "preset": _preset_name(data["preset"]) if data.get("preset") else "",
         "port": _port(data.get("port"), 8737),
-        "autostart": bool(data.get("autostart", True)),
     }
 
 
@@ -431,13 +430,18 @@ def fleet_summary(fleet):
 def redact_fleet(fleet):
     result = copy.deepcopy(fleet)
     defaults = result["defaults"]
-    defaults["has_password"] = bool(defaults["password"])
-    defaults["has_sudo_password"] = bool(defaults["sudo_password"])
+    # ${ENV} 引用在解析后密码字段为空，但仍算「已设置密码」
+    defaults["has_password"] = bool(defaults["password"] or defaults.get("password_ref"))
+    defaults["has_sudo_password"] = bool(
+        defaults["sudo_password"] or defaults.get("sudo_password_ref")
+    )
     defaults["password"] = ""
     defaults["sudo_password"] = ""
     for device in result["devices"]:
-        device["has_password"] = bool(device["password"])
-        device["has_sudo_password"] = bool(device["sudo_password"])
+        device["has_password"] = bool(device["password"] or device.get("password_ref"))
+        device["has_sudo_password"] = bool(
+            device["sudo_password"] or device.get("sudo_password_ref")
+        )
         device["password"] = ""
         device["sudo_password"] = ""
     return result
@@ -500,12 +504,60 @@ def clear():
     return True
 
 
+def merge_fleet_secrets(incoming, stored):
+    """前端不回显密码，保存或启动前用已存清单补回被清空的密码字段。
+
+    补回时优先沿用 ${ENV} 引用，避免明文被写回配置文件。
+    """
+    if not stored:
+        return incoming
+    result = copy.deepcopy(incoming) if isinstance(incoming, dict) else incoming
+    stored_defaults = stored.get("defaults") or {}
+    defaults = result.get("defaults")
+    if isinstance(defaults, dict):
+        for key in ("password", "sudo_password"):
+            if not defaults.get(key):
+                defaults[key] = _secret_value(stored_defaults, key)
+    stored_devices = {
+        item.get("ip"): item for item in (stored.get("devices") or []) if item.get("ip")
+    }
+    for device in result.get("devices") or []:
+        source = stored_devices.get(device.get("ip"))
+        if not source:
+            continue
+        for key in ("password", "sudo_password"):
+            if not device.get(key):
+                device[key] = _secret_value(source, key)
+    return result
+
+
+def _secret_value(source, key):
+    ref = source.get(key + "_ref")
+    return ref or source.get(key) or ""
+
+
+def _fleet_on_disk(fleet):
+    """落盘时保留 ${ENV} 引用，避免把解析出的明文写进配置文件。"""
+    data = copy.deepcopy(fleet)
+    defaults = data.get("defaults") or {}
+    for key in ("password", "sudo_password"):
+        ref = defaults.get(key + "_ref")
+        if ref:
+            defaults[key] = ref
+    for device in data.get("devices") or []:
+        for key in ("password", "sudo_password"):
+            ref = device.get(key + "_ref")
+            if ref:
+                device[key] = ref
+    return data
+
+
 def save_fleet(fleet):
     MEMORY["fleet"] = fleet
     path = fleet_path()
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
-        json.dump(fleet, handle, ensure_ascii=False, indent=2)
+        json.dump(_fleet_on_disk(fleet), handle, ensure_ascii=False, indent=2)
     try:
         os.chmod(path, 0o600)
     except OSError:

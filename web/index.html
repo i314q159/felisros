@@ -87,7 +87,7 @@
         <div class="custom" id="sudo-box">
           <label class="field">
             <span>本机 sudo 密码</span>
-            <input type="text" id="local-sudo" spellcheck="false" autocomplete="off" placeholder="填写当前登录用户的 sudo 密码">
+            <input type="password" id="local-sudo" spellcheck="false" autocomplete="off" placeholder="填写当前登录用户的 sudo 密码">
           </label>
           <span class="hint" id="local-sudo-hint">写入系统源、安装软件包都需要 sudo；留空则只尝试免密或已缓存的 sudo 凭证。</span>
         </div>
@@ -210,8 +210,8 @@
         <div class="import-box">
           <h3>登录信息（只填一次）</h3>
           <label class="field"><span>用户名</span><input type="text" id="quick-user" value="root"></label>
-          <label class="field"><span>SSH 密码</span><input type="text" id="quick-password" placeholder="留空则使用密钥登录"></label>
-          <label class="field"><span>Sudo 密码</span><input type="text" id="quick-sudo" placeholder="留空则与 SSH 密码相同"></label>
+          <label class="field"><span>SSH 密码</span><input type="password" id="quick-password" placeholder="留空则使用密钥登录"></label>
+          <label class="field"><span>Sudo 密码</span><input type="password" id="quick-sudo" placeholder="留空则与 SSH 密码相同"></label>
           <label class="field"><span>并发数量（1-99）</span><input type="number" id="fleet-workers" min="1" max="99" value="3"></label>
           <div class="actions">
             <button type="button" class="primary" id="quick-start">扫描并一键部署</button>
@@ -229,8 +229,8 @@
         <div class="import-box">
           <h3>默认凭据</h3>
           <label class="field"><span>默认用户名</span><input type="text" id="fleet-user" value="root"></label>
-          <label class="field"><span>默认 SSH 密码</span><input type="text" id="fleet-password" placeholder="留空则使用密钥登录"></label>
-          <label class="field"><span>默认 Sudo 密码</span><input type="text" id="fleet-sudo" placeholder="留空则与 SSH 密码相同"></label>
+          <label class="field"><span>默认 SSH 密码</span><input type="password" id="fleet-password" placeholder="留空则使用密钥登录"></label>
+          <label class="field"><span>默认 Sudo 密码</span><input type="password" id="fleet-sudo" placeholder="留空则与 SSH 密码相同"></label>
           <div class="preset-box">
             <h4>凭据预设（只需填用户名和密码）</h4>
             <label class="field"><span>预设名称</span><input type="text" id="preset-name" value="default" placeholder="default"></label>
@@ -245,11 +245,10 @@
         </div>
         <div class="import-box">
           <h3>部署任务</h3>
-          <label class="field"><span>任务类型</span><select id="fleet-task"><option value="rollout">先分发 felisros 软件，再遥控安装 ROS（推荐）</option><option value="update_rollout">先让设备互相更新 felisros，再遥控安装 ROS</option><option value="software">只分发 felisros 软件（启动 + 开机自启）</option><option value="update">只更新设备上已安装的 felisros 版本</option><option value="ros">只安装 ROS（目标机临时运行安装器）</option></select></label>
+          <label class="field"><span>任务类型</span><select id="fleet-task"><option value="rollout">先分发 felisros 软件，再遥控安装 ROS（推荐）</option><option value="update_rollout">先让设备互相更新 felisros，再遥控安装 ROS</option><option value="software">只分发 felisros 软件（分发后后台启动）</option><option value="update">只更新设备上已安装的 felisros 版本</option><option value="ros">只安装 ROS（目标机临时运行安装器）</option></select></label>
           <label class="field" id="fleet-seed-field"><span>更新源地址（留空则使用控制端本机）</span><input type="text" id="fleet-update-seed" placeholder="http://192.168.1.20:8737"></label>
           <label class="field"><span>服务端口</span><input type="number" id="fleet-port" value="8737" min="1" max="65535"></label>
-          <label class="check"><input type="checkbox" id="fleet-autostart" checked><span>安装完成后启动服务并设置开机自启（systemd，失败回退 crontab）</span></label>
-          <p class="note" id="fleet-task-note">推荐任务会先把 felisros 软件装到设备并开机自启，再把下面的配置文件下发给设备，由设备上的 felisros 自动安装 ROS 并把结果和用时回传到这里。目标机无需预装任何软件。</p>
+          <p class="note" id="fleet-task-note">推荐任务会先把 felisros 软件装到设备并在后台启动（不设置开机自启），再把下面的配置文件下发给设备，由设备上的 felisros 自动安装 ROS 并把结果和用时回传到这里。目标机无需预装任何软件。</p>
           <label class="field" id="fleet-deploy-field"><span>ROS 部署配置文件（点击按钮从 Windows 选择 JSON，也可直接粘贴）</span><textarea id="fleet-deploy-text" spellcheck="false" placeholder="felisros/deploy/v1 JSON"></textarea></label>
           <div class="import-actions">
             <button type="button" class="ghost" id="fleet-config-import">选择配置文件</button>
@@ -312,12 +311,11 @@
             <label class="field"><span>远程任务</span><select id="gen-task"><option value="rollout">分发软件 + 遥控安装 ROS（推荐）</option><option value="update_rollout">设备互更新 + 遥控安装 ROS</option><option value="software">只分发 felisros 软件</option><option value="update">只更新已安装的 felisros</option><option value="ros">只安装 ROS</option></select></label>
             <label class="field"><span>更新源地址（更新任务用，留空用本机）</span><input type="text" id="gen-update-seed" placeholder="http://192.168.1.20:8737"></label>
             <label class="field"><span>服务端口（软件安装任务）</span><input type="number" id="gen-port" value="8737" min="1" max="65535"></label>
-            <label class="check"><input type="checkbox" id="gen-autostart" checked><span>安装后启动服务并设置开机自启</span></label>
             <label class="field"><span>目标网段（可选，CIDR）</span><input type="text" id="gen-network" placeholder="192.168.1.0/24"></label>
             <div class="gen-defaults">
               <label class="field"><span>默认用户名</span><input type="text" id="gen-user" value="root"></label>
-              <label class="field"><span>默认 SSH 密码</span><input type="text" id="gen-password" placeholder="留空则使用密钥登录"></label>
-              <label class="field"><span>默认 Sudo 密码</span><input type="text" id="gen-sudo" placeholder="留空则与 SSH 密码相同"></label>
+              <label class="field"><span>默认 SSH 密码</span><input type="password" id="gen-password" placeholder="留空则使用密钥登录"></label>
+              <label class="field"><span>默认 Sudo 密码</span><input type="password" id="gen-sudo" placeholder="留空则与 SSH 密码相同"></label>
               <label class="field"><span>并发数量（1-99）</span><input type="number" id="gen-workers" min="1" max="99" value="3"></label>
             </div>
             <label class="field"><span>目标设备（每行一台）</span><textarea id="gen-devices" spellcheck="false" placeholder="192.168.1.12&#10;192.168.1.20,pi,raspberry&#10;192.168.1.35,pi,${ROBOT_PASS},${ROBOT_SUDO}"></textarea></label>
@@ -379,7 +377,7 @@
 
     <article class="card" id="dist-active-card">
       <h2>主动批量分发（像批量部署 ROS 一样）</h2>
-      <p class="note">不用对方动手：控制端通过 SSH 把 felisros 安装包推送到多台 Linux 设备，自动安装、启动服务并设置开机自启。与「局域网批量部署」共用同一套批量引擎，逐台回传结果与用时。</p>
+      <p class="note">不用对方动手：控制端通过 SSH 把 felisros 安装包推送到多台 Linux 设备，自动安装并在后台启动服务（不设置开机自启）。与「局域网批量部署」共用同一套批量引擎，逐台回传结果与用时。</p>
       <div class="net-sources">
         <span class="hint">本机网卡（勾选要扫描的网段，可多选；全部留空则扫描所有网卡）</span>
         <div class="net-list" id="dist-net-list"></div>
@@ -408,15 +406,15 @@
         <div class="import-box">
           <h3>统一登录信息</h3>
           <label class="field"><span>用户名</span><input type="text" id="dist-user" value="root"></label>
-          <label class="field"><span>SSH 密码</span><input type="text" id="dist-password" placeholder="留空则使用密钥登录"></label>
-          <label class="field"><span>Sudo 密码</span><input type="text" id="dist-sudo" placeholder="留空则与 SSH 密码相同"></label>
+          <label class="field"><span>SSH 密码</span><input type="password" id="dist-password" placeholder="留空则使用密钥登录"></label>
+          <label class="field"><span>Sudo 密码</span><input type="password" id="dist-sudo" placeholder="留空则与 SSH 密码相同"></label>
           <p class="hint">每台设备也可在上方单独覆盖；密码不会出现在日志或接口返回里。</p>
         </div>
         <div class="import-box">
           <h3>分发设置</h3>
           <label class="field"><span>并发数量（1-99）</span><input type="number" id="dist-workers" min="1" max="99" value="3"></label>
           <label class="field"><span>服务端口</span><input type="number" id="dist-port" value="8737" min="1" max="65535"></label>
-          <label class="check"><input type="checkbox" id="dist-autostart" checked><span>安装后启动服务并设置开机自启（systemd，失败回退 crontab）</span></label>
+          <p class="note">分发后在目标设备上后台启动（不设置开机自启），设备重启后用 <code>felisros</code> 手动启动，或在设备上执行 <code>felisros --stop</code> 退出。</p>
           <div class="import-actions">
             <button type="button" class="primary" id="dist-start">批量分发软件</button>
             <button type="button" class="ghost" id="dist-cancel">取消</button>
