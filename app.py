@@ -16,7 +16,7 @@ from core import capabilities, config, discovery, peers, release, ros
 from core.config import ConfigError
 from core.fleet import Fleet
 from core.installer import STEPS, EventBus, Installer
-from core.system import SystemInfo
+from core.system import SystemInfo, sudo_state
 
 # 强制 stdout/stderr 使用 UTF-8：目标机 locale 为 C/POSIX 时 Python 会退化为
 # latin-1 编码，一旦 print 中文就抛 UnicodeEncodeError 直接令服务崩溃。
@@ -819,6 +819,7 @@ class Handler(BaseHTTPRequestHandler):
                 "mirrors": ros.mirror_options(system.codename),
                 "limits": {"min_free_gb": 2, "min_desktop_gb": 6},
                 "steps": STEPS,
+                "sudo": sudo_state(),
                 "version": release.VERSION,
                 "role": capabilities.ROLE,
                 "capabilities": capabilities.manifest(),
@@ -841,7 +842,7 @@ def run_deploy(path, system):
     installer = Installer(system)
     since = 0
     try:
-        ok, message = installer.start(deploy)
+        ok, message = installer.start(deploy, os.environ.get("FELISROS_SUDO_PASSWORD", ""))
         if not ok:
             print(message)
             return 1

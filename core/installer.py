@@ -2,14 +2,14 @@ import threading
 import time
 import traceback
 
-from . import keys, ros, rosrepo, shellenv, sysrepo
+from . import ros, rosrepo, shellenv, sysrepo
 from .apt import Apt
 from .runner import Runner
+from .system import is_root
 
 STEPS = [
     {"id": "precheck", "title": "环境检查"},
     {"id": "syssource", "title": "系统源"},
-    {"id": "key", "title": "ROS 公钥"},
     {"id": "rossource", "title": "ROS 源"},
     {"id": "install", "title": "安装"},
     {"id": "env", "title": "环境变量"},
@@ -146,6 +146,25 @@ class Installer:
     def _stopped(self):
         return self.runner.cancelled.is_set()
 
+    def _ensure_sudo(self):
+        """提前确认 sudo 可用，避免没填密码时把每个镜像源都重试一遍。"""
+        if not self.runner.which("sudo"):
+            if is_root():
+                return True, ""
+            return False, "系统里没有 sudo 命令, 请以 root 身份运行 felisros"
+        probe = self.runner.run("true", timeout=60, sudo=True, quiet=True)
+        if probe.ok:
+            if not self.sudo_password:
+                self.log("sudo 免密可用", "ok")
+            else:
+                self.log("sudo 密码校验通过", "ok")
+            return True, ""
+        if probe.hit("not in the sudoers file", "不在 sudoers"):
+            return False, "当前用户没有 sudo 权限, 请换用管理员账号或以 root 运行"
+        if self.sudo_password:
+            return False, "sudo 密码不正确, 请重新填写本机的 sudo 密码"
+        return False, "安装 ROS 需要 sudo 密码, 请在安装页面填写本机 sudo 密码"
+
     def _flow(self, config):
         mode = config.get("mode") or "auto"
         result = {"ok": False, "mode": mode}
@@ -188,6 +207,12 @@ class Installer:
             ),
             "ok",
         )
+        sudo_ok, sudo_reason = self._ensure_sudo()
+        if not sudo_ok:
+            self.log(sudo_reason, "err")
+            self.mark("precheck", "fail", "sudo 不可用")
+            result["reason"] = sudo_reason
+            return result
         self.apt.repair()
         self.mark("precheck", "ok", "环境检查通过")
         if self._stopped():
@@ -204,14 +229,6 @@ class Installer:
         else:
             self.mark("syssource", "skip", "保留原系统源")
         self.progress(20)
-
-        self.mark("key", "run", "获取并校验 ROS 公钥")
-        key_source = keys.install(self.runner, self.note)
-        result["key_source"] = key_source
-        self.mark("key", "ok" if key_source else "warn", key_source and "指纹已核对")
-        if self._stopped():
-            return self._cancelled(result)
-        self.progress(28)
 
         self.mark("rossource", "run", "写入 ROS 软件源并验证可用")
         first = config.get("mirror")

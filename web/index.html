@@ -84,10 +84,18 @@
           <span>同时把系统软件源换成国内镜像（原配置会备份为 <code>.felisros.bak</code>）</span>
         </label>
 
+        <div class="custom" id="sudo-box">
+          <label class="field">
+            <span>本机 sudo 密码</span>
+            <input type="text" id="local-sudo" spellcheck="false" autocomplete="off" placeholder="填写当前登录用户的 sudo 密码">
+          </label>
+          <span class="hint" id="local-sudo-hint">写入系统源、安装软件包都需要 sudo；留空则只尝试免密或已缓存的 sudo 凭证。</span>
+        </div>
+
         <p class="note bad" id="control-note" hidden>当前是 Windows 控制端：不允许在 Windows 本机安装 ROS 或更新自身。请切换到“局域网批量部署”，把软件与更新分发给 Linux 设备。</p>
         <div class="actions">
           <button type="button" class="primary" id="start">开始安装</button>
-          <span class="hint">需要 sudo 权限，建议先执行 <code>sudo -v</code> 缓存凭证</span>
+          <span class="hint">apt 与系统源写入都要求 sudo 权限</span>
         </div>
       </article>
     </div>

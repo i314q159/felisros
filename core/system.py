@@ -2,6 +2,7 @@ import glob
 import os
 import platform
 import shutil
+import subprocess
 
 ARCH_TABLE = {
     "x86_64": "amd64",
@@ -42,6 +43,29 @@ def normalize_arch(machine):
 
 def installed_ros():
     return sorted(path.split("/")[3] for path in glob.glob("/opt/ros/*/setup.bash"))
+
+
+def is_root():
+    return hasattr(os, "geteuid") and os.geteuid() == 0
+
+
+def sudo_state():
+    """本机 sudo 现状：root 直接可用、免密可用，还是必须填密码。"""
+    if is_root():
+        return {"root": True, "available": True, "passwordless": True}
+    if not shutil.which("sudo"):
+        return {"root": False, "available": False, "passwordless": False}
+    try:
+        probe = subprocess.run(
+            ["sudo", "-n", "true"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
+        passwordless = probe.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        passwordless = False
+    return {"root": False, "available": True, "passwordless": passwordless}
 
 
 def free_space_gb(path="/"):

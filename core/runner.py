@@ -106,9 +106,11 @@ class Runner:
         self.process = None
         output = "\n".join(lines)
         if code != 0 and ("password is required" in output or "需要密码" in output):
-            self.emit("sudo 需要密码: 请在批量部署里填写该设备的 Sudo 密码", "err")
+            self.emit("sudo 需要密码: 请在安装页面或设备清单里填写 sudo 密码", "err")
         elif code != 0 and ("incorrect password" in output or "Sorry, try again" in output):
-            self.emit("sudo 密码错误: 请检查该设备的 Sudo 密码", "err")
+            self.emit("sudo 密码错误: 请检查填写的 sudo 密码", "err")
+        elif code != 0 and "not in the sudoers file" in output:
+            self.emit("当前用户没有 sudo 权限: 请换用管理员账号或以 root 运行", "err")
         return Result(code, output)
 
     def cancel(self):

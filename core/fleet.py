@@ -25,6 +25,20 @@ def task_label(task):
     return "安装 ROS"
 
 
+def with_defaults(device, defaults):
+    """设备行留空时回落到清单默认凭据（前端「统一登录信息」即默认凭据）。
+
+    只在运行时合并，不回写清单，避免把统一密码固化到每台设备上。
+    """
+    merged = dict(device)
+    if not merged.get("username"):
+        merged["username"] = defaults.get("username") or "root"
+    for key in ("password", "sudo_password"):
+        if not merged.get(key) and not merged.get(key + "_ref"):
+            merged[key] = defaults.get(key) or ""
+    return merged
+
+
 class Fleet:
     def __init__(self):
         self.bus = EventBus()
@@ -93,7 +107,15 @@ class Fleet:
                 with open(package, "rb") as handle:
                     archive = handle.read()
             devices = [
-                dict(item, status="pending", reason="", stage="", arch="", version="", elapsed=0)
+                dict(
+                    with_defaults(item, fleet_config.get("defaults") or {}),
+                    status="pending",
+                    reason="",
+                    stage="",
+                    arch="",
+                    version="",
+                    elapsed=0,
+                )
                 for item in fleet_config["devices"]
                 if item.get("selected")
             ]

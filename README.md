@@ -78,17 +78,12 @@ Windows / macOS 作为控制端只需要 Python 3 与浏览器；上面的系统
 
 ```bash
 cd felisros
-sudo -v
 python3 app.py
 ```
 
 `app.py` 会启动本机 HTTP 服务并打开浏览器界面，不需要安装任何第三方包。
 
-```bash
-python3 app.py
-```
-
-服务默认绑定 `0.0.0.0`，浏览器界面是 `http://127.0.0.1:8737`。如果 sudo 需要密码，也可以用 `sudo python3 app.py` 启动，程序会通过 `SUDO_USER` 找到真正用户的 shell 配置文件。
+服务默认绑定 `0.0.0.0`，浏览器界面是 `http://127.0.0.1:8737`。「安装模式」里有「本机 sudo 密码」输入框：填上当前登录用户的 sudo 密码，程序就用 `sudo -S` 从标准输入读密码执行 apt 与系统源写入，密码不落到命令行和日志里。不想每次输入时，也可以先用 `sudo -v` 缓存凭证后留空，或直接 `sudo python3 app.py` 以 root 运行（程序会通过 `SUDO_USER` 找到真正用户的 shell 配置文件）。开始安装前会先校验 sudo：免密可用、密码正确、密码错误、当前用户不在 sudoers 里都有对应提示，不会在没权限时把每个镜像源都重试一遍。
 
 在 Windows / macOS 上不能真实安装 ROS，但界面会明确标记为**控制端**：单机安装按钮被禁用，不允许更新自身；「配置生成器」「局域网批量部署」「局域网分发」「设备互更新」仍可使用。也可以给局域网里的多台 Linux 设备批量安装软件、推送更新，再遥控它们安装 ROS。
 
@@ -109,6 +104,8 @@ python3 app.py
 | `--apply-update` | 从更新源拉取并安装最新版本后退出（仅 Linux） |
 | `--update-seed URL` | 手动指定更新源，如 `http://192.168.1.20:8737` |
 | `--no-restart` | 更新后不自动重启服务，配合 `--apply-update` 使用 |
+
+`--deploy` 无界面部署时，sudo 密码可用环境变量 `FELISROS_SUDO_PASSWORD` 提供，避免写进命令行。
 
 ## 分发到 Linux
 

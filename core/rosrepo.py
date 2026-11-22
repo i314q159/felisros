@@ -3,7 +3,6 @@ import re
 import tempfile
 
 from . import ros
-from .keys import KEYRING
 
 LIST_PATH = "/etc/apt/sources.list.d/felisros.list"
 APT_UA = "Debian APT-HTTP/1.3"
@@ -12,7 +11,7 @@ DEAD_CODES = ("403", "404", "410")
 
 def render(codename, arch, sources):
     lines = [
-        "deb [arch={} signed-by={}] {} {} main".format(arch, KEYRING, item["url"], codename)
+        "deb [arch={} trusted=yes] {} {} main".format(arch, item["url"], codename)
         for item in sources
     ]
     return "\n".join(lines) + "\n"

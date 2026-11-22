@@ -100,6 +100,23 @@ function renderFacts(env) {
   $("pill-mode").textContent = env.role === "control" ? "局域网控制端" : "真实安装";
 }
 
+function renderSudoHint(env) {
+  const box = $("sudo-box");
+  const hint = $("local-sudo-hint");
+  if (!box || !hint) return;
+  box.hidden = env.role === "control";
+  const sudo = env.sudo || {};
+  if (sudo.root) {
+    hint.textContent = "当前以 root 运行，不需要 sudo 密码。";
+  } else if (!sudo.available) {
+    hint.textContent = "系统里没有 sudo，请用 root 账号运行 felisros。";
+  } else if (sudo.passwordless) {
+    hint.textContent = "本机 sudo 免密可用，密码可以留空。";
+  } else {
+    hint.textContent = "写入系统源、安装软件包都需要 sudo；留空则只尝试免密或已缓存的 sudo 凭证。";
+  }
+}
+
 function renderOptions(env) {
   const versions = env.catalog.filter((item) => item.available);
   const list = versions.length ? versions : env.catalog;
@@ -201,7 +218,6 @@ function showResult(result, ok) {
   if (result.package) rows.push(["安装包", result.package]);
   if (result.system_source) rows.push(["系统软件源", result.system_source.label]);
   if (result.sources) rows.push(["ROS 软件源", result.sources.map((item) => item.mirror).join("、")]);
-  if (result.key_source) rows.push(["公钥来源", result.key_source]);
   if (result.extra_packages) rows.push(["额外软件包", result.extra_packages.join("、") + (result.extra_ok ? "" : "（部分失败）")]);
   rows.push(["环境变量", "已写入用户 shell 配置文件"]);
   rows.push(["遥测", "无"]);
@@ -292,6 +308,10 @@ function currentFormConfig() {
   };
 }
 
+function localPayload(config) {
+  return Object.assign({}, config, { sudo_password: $("local-sudo").value });
+}
+
 function ensureOption(select, value) {
   if (!value || value === "auto") return;
   const exists = Array.from(select.options).some((option) => option.value === value);
@@ -327,7 +347,7 @@ async function fillForm() {
 
 async function deployNow() {
   const config = await previewDeploy();
-  await api("/api/start", config);
+  await api("/api/start", localPayload(config));
   state.since = 0;
   beginRun();
   poll();
@@ -884,7 +904,7 @@ async function quickStart() {
 
 async function startInstall() {
   try {
-    await api("/api/start", currentFormConfig());
+    await api("/api/start", localPayload(currentFormConfig()));
   } catch (exc) {
     alert(exc.message || exc);
     return;
@@ -1032,21 +1052,34 @@ function distLine(text, level) {
 function distPlaceholder(device, key) {
   const ref = device[key + "_ref"];
   if (ref) return ref;
-  return device["has_" + key] ? "已设置（留空保持不变）" : "未设置";
+  if (device["has_" + key]) return "已设置（留空保持不变）";
+  const unified =
+    key === "sudo_password"
+      ? $("dist-sudo").value || $("dist-password").value
+      : $("dist-password").value;
+  return unified ? "使用统一登录信息" : "未设置";
+}
+
+function refreshDistPlaceholders() {
+  $("dist-device-body")
+    .querySelectorAll("tr")
+    .forEach((row) => {
+      const device = state.distDevices[Number(row.dataset.index)];
+      if (!device) return;
+      row.querySelector(".dist-pass").placeholder = distPlaceholder(device, "password");
+      row.querySelector(".dist-sudo").placeholder = distPlaceholder(device, "sudo_password");
+    });
 }
 
 function renderDistDevices(devices) {
-  const user = $("dist-user").value || "root";
-  const pass = $("dist-password").value;
-  const sudo = $("dist-sudo").value || pass;
   state.distDevices = (devices || []).map((item) =>
     Object.assign(
       {
         alias: "",
-        username: user,
-        password: pass,
+        username: "",
+        password: "",
         password_ref: "",
-        sudo_password: sudo,
+        sudo_password: "",
         sudo_password_ref: "",
         has_password: false,
         has_sudo_password: false,
@@ -1493,6 +1526,9 @@ function bind() {
   }));
   $("dist-scan").addEventListener("click", guard(distScan));
   $("dist-start").addEventListener("click", guard(startDistDeploy));
+  ["dist-user", "dist-password", "dist-sudo"].forEach((id) =>
+    $(id).addEventListener("input", refreshDistPlaceholders)
+  );
   $("dist-cancel").addEventListener("click", async () => {
     await api("/api/fleet/cancel", {});
   });
@@ -1598,6 +1634,7 @@ async function loadEnv() {
   state.env = env;
   state.version = env.version || state.version;
   renderFacts(env);
+  renderSudoHint(env);
   renderOptions(env);
   renderSteps(env.steps);
   const info = await fetch("/api/config").then((r) => r.json());
