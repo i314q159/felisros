@@ -1496,6 +1496,16 @@ function bind() {
   $("dist-cancel").addEventListener("click", async () => {
     await api("/api/fleet/cancel", {});
   });
+  $("dev-all").addEventListener("click", () => {
+    const all = state.devices.length > 0 && state.devices.every((device) => device.selected);
+    state.devices.forEach((device) => {
+      device.selected = !all;
+    });
+    document.querySelectorAll("#device-body .dev-select").forEach((box, index) => {
+      box.checked = state.devices[index].selected;
+    });
+    markFleetDirty();
+  });
   $("dist-all").addEventListener("click", () => {
     const all = state.distDevices.length > 0 && state.distDevices.every((device) => device.selected);
     state.distDevices.forEach((device) => {
