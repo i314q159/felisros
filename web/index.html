@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
@@ -202,8 +202,8 @@
         <div class="import-box">
           <h3>登录信息（只填一次）</h3>
           <label class="field"><span>用户名</span><input type="text" id="quick-user" value="root"></label>
-          <label class="field"><span>SSH 密码</span><input type="password" id="quick-password" placeholder="留空则使用密钥登录"></label>
-          <label class="field"><span>Sudo 密码</span><input type="password" id="quick-sudo" placeholder="留空则与 SSH 密码相同"></label>
+          <label class="field"><span>SSH 密码</span><input type="text" id="quick-password" placeholder="留空则使用密钥登录"></label>
+          <label class="field"><span>Sudo 密码</span><input type="text" id="quick-sudo" placeholder="留空则与 SSH 密码相同"></label>
           <label class="field"><span>并发数量（1-99）</span><input type="number" id="fleet-workers" min="1" max="99" value="3"></label>
           <div class="actions">
             <button type="button" class="primary" id="quick-start">扫描并一键部署</button>
@@ -221,8 +221,8 @@
         <div class="import-box">
           <h3>默认凭据</h3>
           <label class="field"><span>默认用户名</span><input type="text" id="fleet-user" value="root"></label>
-          <label class="field"><span>默认 SSH 密码</span><input type="password" id="fleet-password" placeholder="留空则使用密钥登录"></label>
-          <label class="field"><span>默认 Sudo 密码</span><input type="password" id="fleet-sudo" placeholder="留空则与 SSH 密码相同"></label>
+          <label class="field"><span>默认 SSH 密码</span><input type="text" id="fleet-password" placeholder="留空则使用密钥登录"></label>
+          <label class="field"><span>默认 Sudo 密码</span><input type="text" id="fleet-sudo" placeholder="留空则与 SSH 密码相同"></label>
           <div class="preset-box">
             <h4>凭据预设（只需填用户名和密码）</h4>
             <label class="field"><span>预设名称</span><input type="text" id="preset-name" value="default" placeholder="default"></label>
@@ -308,8 +308,8 @@
             <label class="field"><span>目标网段（可选，CIDR）</span><input type="text" id="gen-network" placeholder="192.168.1.0/24"></label>
             <div class="gen-defaults">
               <label class="field"><span>默认用户名</span><input type="text" id="gen-user" value="root"></label>
-              <label class="field"><span>默认 SSH 密码</span><input type="password" id="gen-password" placeholder="留空则使用密钥登录"></label>
-              <label class="field"><span>默认 Sudo 密码</span><input type="password" id="gen-sudo" placeholder="留空则与 SSH 密码相同"></label>
+              <label class="field"><span>默认 SSH 密码</span><input type="text" id="gen-password" placeholder="留空则使用密钥登录"></label>
+              <label class="field"><span>默认 Sudo 密码</span><input type="text" id="gen-sudo" placeholder="留空则与 SSH 密码相同"></label>
               <label class="field"><span>并发数量（1-99）</span><input type="number" id="gen-workers" min="1" max="99" value="3"></label>
             </div>
             <label class="field"><span>目标设备（每行一台）</span><textarea id="gen-devices" spellcheck="false" placeholder="192.168.1.12&#10;192.168.1.20,pi,raspberry&#10;192.168.1.35,pi,${ROBOT_PASS},${ROBOT_SUDO}"></textarea></label>
@@ -400,8 +400,8 @@
         <div class="import-box">
           <h3>统一登录信息</h3>
           <label class="field"><span>用户名</span><input type="text" id="dist-user" value="root"></label>
-          <label class="field"><span>SSH 密码</span><input type="password" id="dist-password" placeholder="留空则使用密钥登录"></label>
-          <label class="field"><span>Sudo 密码</span><input type="password" id="dist-sudo" placeholder="留空则与 SSH 密码相同"></label>
+          <label class="field"><span>SSH 密码</span><input type="text" id="dist-password" placeholder="留空则使用密钥登录"></label>
+          <label class="field"><span>Sudo 密码</span><input type="text" id="dist-sudo" placeholder="留空则与 SSH 密码相同"></label>
           <p class="hint">每台设备也可在上方单独覆盖；密码不会出现在日志或接口返回里。</p>
         </div>
         <div class="import-box">

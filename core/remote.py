@@ -16,15 +16,23 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REMOTE_BASE = "/tmp/felisros-batch"
 REPORT_MARK = "FELISROS_REPORT "
 
-REMOTE_CONTROL = """python3 - __CFG__ __PORT__ __VERS__ <<'PY'
+REMOTE_CONTROL = """python3 - __CFG__ __PORT__ __VERS__ __SUDO__ <<'PY'
 import json
 import sys
 import time
 import urllib.request
 
+for _s in (sys.stdout, sys.stderr):
+    if hasattr(_s, "reconfigure"):
+        try:
+            _s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
 cfg_path = sys.argv[1]
 port = int(sys.argv[2])
 versions_path = sys.argv[3] or None
+sudo_path = sys.argv[4] if len(sys.argv) > 4 else ""
 base = "http://127.0.0.1:%d" % port
 
 
@@ -51,7 +59,14 @@ try:
     if versions_path:
         manifest = json.load(open(versions_path, encoding="utf-8"))
         request("/api/versions/import", {"text": json.dumps(manifest, ensure_ascii=False)})
-    answer = request("/api/start", config)
+    body = dict(config)
+    if sudo_path:
+        try:
+            with open(sudo_path, encoding="utf-8") as handle:
+                body["sudo_password"] = handle.read().strip()
+        except OSError:
+            pass
+    answer = request("/api/start", body)
     if not answer.get("ok"):
         reason = str(answer.get("message") or "安装未能启动")
         print("[felisros] " + reason, flush=True)
@@ -104,6 +119,13 @@ import json
 import sys
 import time
 import urllib.request
+
+for _s in (sys.stdout, sys.stderr):
+    if hasattr(_s, "reconfigure"):
+        try:
+            _s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
 seed = sys.argv[1]
 port = int(sys.argv[2])
@@ -225,11 +247,25 @@ class SshClient:
             env["SSH_ASKPASS"] = ""
             env["SSH_ASKPASS_REQUIRE"] = ""
             return env
-        handle, path = tempfile.mkstemp(prefix="felisros-ask-", suffix=".sh")
-        with os.fdopen(handle, "w", encoding="utf-8") as script:
-            script.write("#!/bin/sh\nprintf '%s\\n' {}\n".format(shlex.quote(self.password)))
-        os.chmod(path, 0o700)
-        self.helper = path
+        if os.name == "nt":
+            # Windows 的 ssh.exe 用 CreateProcessW 启动 SSH_ASKPASS，
+            # shell 脚本会报 error:193，必须生成 .cmd 批处理；
+            # 密码通过环境变量 + 延迟展开传递，避免特殊字符被 cmd 解析。
+            handle, path = tempfile.mkstemp(prefix="felisros-ask-", suffix=".cmd")
+            with os.fdopen(handle, "w", encoding="utf-8") as script:
+                script.write(
+                    "@echo off\r\n"
+                    "@setlocal enabledelayedexpansion\r\n"
+                    "@echo !FELISROS_ASKPASS!\r\n"
+                )
+            self.helper = path
+            env["FELISROS_ASKPASS"] = self.password
+        else:
+            handle, path = tempfile.mkstemp(prefix="felisros-ask-", suffix=".sh")
+            with os.fdopen(handle, "w", encoding="utf-8") as script:
+                script.write("#!/bin/sh\nprintf '%s\\n' {}\n".format(shlex.quote(self.password)))
+            os.chmod(path, 0o700)
+            self.helper = path
         env["SSH_ASKPASS"] = path
         env["SSH_ASKPASS_REQUIRE"] = "force"
         env["DISPLAY"] = env.get("DISPLAY") or ":0"
@@ -376,6 +412,7 @@ class SshClient:
                 setup = (
                     "mkdir -p {dir}; "
                     "cp {unit} {dir}/felisros.service; "
+                    "loginctl enable-linger 2>/dev/null || true; "
                     "if [ \"$(id -u)\" -ne 0 ] "
                     "&& XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user daemon-reload "
                     "&& XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user enable felisros.service "
@@ -411,12 +448,33 @@ class SshClient:
                 )
 
             ok, output = self.run(
-                "python3 -c \"import time,urllib.request; time.sleep(2); "
-                "urllib.request.urlopen('http://127.0.0.1:{}/api/env', timeout=5)\"".format(int(port)),
+                "python3 -c \"import time,urllib.request,sys\n"
+                "deadline=time.time()+25\n"
+                "while True:\n"
+                "    try:\n"
+                "        urllib.request.urlopen('http://127.0.0.1:{}/api/env', timeout=3)\n"
+                "        break\n"
+                "    except Exception:\n"
+                "        if time.time() >= deadline:\n"
+                "            sys.exit(1)\n"
+                "        time.sleep(2)\n\"".format(int(port)),
                 timeout=60,
             )
             if not ok:
-                return {"ok": False, "reason": "安装完成但服务未响应"}
+                _, diag = self.run(
+                    "echo '[journal]'; "
+                    "XDG_RUNTIME_DIR=/run/user/$(id -u) journalctl --user -u felisros.service "
+                    "-n 30 --no-pager 2>&1 | tail -40; "
+                    "echo '[foreground]'; "
+                    "timeout 6 {launcher} --no-browser --port {port} 2>&1 | tail -40".format(
+                        launcher=shlex.quote(launcher), port=int(port)
+                    ),
+                    timeout=60,
+                )
+                return {
+                    "ok": False,
+                    "reason": "安装完成但服务未响应: " + (diag[-600:] or "（无诊断输出）"),
+                }
 
             result = {
                 "ok": True,
@@ -523,11 +581,19 @@ class SshClient:
                 ):
                     return {"ok": False, "reason": "上传版本清单失败"}
 
+            sudo_file = ""
+            if self.sudo_password:
+                sudo_file = temp + "/sudo.txt"
+                if not self.upload(self.sudo_password.encode("utf-8"), sudo_file):
+                    return {"ok": False, "reason": "上传 sudo 凭据失败"}
+                self.run("chmod 600 {}".format(shlex.quote(sudo_file)), timeout=30)
+
             self.emit("遥控 felisros 安装 ROS，请等待", "info")
             command = (
                 REMOTE_CONTROL.replace("__CFG__", shlex.quote(cfg))
                 .replace("__PORT__", str(int(port)))
                 .replace("__VERS__", shlex.quote(versions_file))
+                .replace("__SUDO__", shlex.quote(sudo_file))
             )
             ok, output = self.run(command, timeout=5400)
             item = parse_report(output)

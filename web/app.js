@@ -1,4 +1,4 @@
-const state = {
+﻿const state = {
   env: null,
   mode: "auto",
   since: 0,
@@ -417,8 +417,8 @@ function renderDevices(devices) {
         <td>${escapeHtml(device.hostname || "—")}</td>
         <td>${badge}</td>
         <td><input type="text" class="dev-user" value="${escapeHtml(device.username)}"></td>
-        <td><input type="password" class="dev-pass" placeholder="${escapeHtml(placeholderFor(device, "password"))}"></td>
-        <td><input type="password" class="dev-sudo" placeholder="${escapeHtml(placeholderFor(device, "sudo_password"))}"></td>
+        <td><input type="text" class="dev-pass" placeholder="${escapeHtml(placeholderFor(device, "password"))}"></td>
+        <td><input type="text" class="dev-sudo" placeholder="${escapeHtml(placeholderFor(device, "sudo_password"))}"></td>
         <td class="dev-status">${escapeHtml(device.status || "等待")}</td>
       </tr>`;
     })
@@ -1069,8 +1069,8 @@ function renderDistDevices(devices) {
         <td>${escapeHtml(device.ip)}</td>
         <td>${system}</td>
         <td><input type="text" class="dist-user" value="${escapeHtml(device.username)}"></td>
-        <td><input type="password" class="dist-pass" placeholder="${escapeHtml(distPlaceholder(device, "password"))}"></td>
-        <td><input type="password" class="dist-sudo" placeholder="${escapeHtml(distPlaceholder(device, "sudo_password"))}"></td>
+        <td><input type="text" class="dist-pass" placeholder="${escapeHtml(distPlaceholder(device, "password"))}"></td>
+        <td><input type="text" class="dist-sudo" placeholder="${escapeHtml(distPlaceholder(device, "sudo_password"))}"></td>
         <td class="dist-status">${escapeHtml(device.status || "等待")}</td>
       </tr>`;
     })

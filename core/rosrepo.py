@@ -24,7 +24,12 @@ def write(runner, codename, arch, sources):
     try:
         handle.write(data)
         handle.close()
-        return runner.run("cp {} {}".format(handle.name, LIST_PATH), sudo=True).ok
+        # NamedTemporaryFile 是 0600，cp 会保留该权限；源文件必须 0644，
+        # 否则非 root 的 apt-cache/apt 读不到它，会把 ROS 源当成不存在。
+        # 用 sh -c 包住整条命令，否则 && 后的 chmod 会掉出 sudo 作用域。
+        return runner.run(
+            "sh -c 'cp {0} {1} && chmod 644 {1}'".format(handle.name, LIST_PATH), sudo=True
+        ).ok
     finally:
         try:
             os.unlink(handle.name)

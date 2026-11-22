@@ -142,7 +142,9 @@ def write(runner, system, url):
         handle.write(data)
         handle.close()
         backup(runner, target)
-        result = runner.run("cp {} {}".format(handle.name, target), sudo=True)
+        result = runner.run(
+            "sh -c 'cp {0} {1} && chmod 644 {1}'".format(handle.name, target), sudo=True
+        )
         return result.ok
     finally:
         try:

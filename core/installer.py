@@ -64,6 +64,7 @@ class Installer:
         self.thread = None
         self.runner = None
         self.apt = None
+        self.sudo_password = ""
         self.state = self._idle()
 
     def _idle(self):
@@ -102,10 +103,11 @@ class Installer:
             if text:
                 self.state["message"] = text
 
-    def start(self, config):
+    def start(self, config, sudo_password=""):
         with self.lock:
             if self.state["running"]:
                 return False, "已经有安装任务在运行"
+            self.sudo_password = sudo_password or ""
             self.bus = EventBus()
             self.state = self._idle()
             self.state["running"] = True
@@ -120,7 +122,7 @@ class Installer:
         self.bus.push({"type": "log", "level": "warn", "text": "收到取消请求，正在停止..."})
 
     def _run(self, config):
-        self.runner = Runner(on_line=self.log)
+        self.runner = Runner(on_line=self.log, sudo_password=self.sudo_password)
         self.apt = Apt(self.runner)
         result = {"ok": False, "reason": "unknown"}
         try:

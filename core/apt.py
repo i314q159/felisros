@@ -44,7 +44,9 @@ class Apt:
         from . import ros
 
         found = {}
-        result = self.runner.run("apt-cache search ros-base", timeout=120)
+        # 用 sudo 执行：历史上写入的源文件可能还是 0600，非 root 读不到会把
+        # ROS 源当成不存在，误判"镜像里没有 ROS 软件包"。
+        result = self.runner.run("apt-cache search ros-base", timeout=120, sudo=True)
         for line in result.out.splitlines():
             match = re.search(r"\bros-([a-z]+)-ros-base\b", line)
             if match:

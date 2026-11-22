@@ -15,8 +15,17 @@ from urllib.parse import parse_qs, urlparse
 from core import capabilities, config, discovery, peers, release, ros
 from core.config import ConfigError
 from core.fleet import Fleet
-from core.installer import EventBus, STEPS, Installer
+from core.installer import STEPS, EventBus, Installer
 from core.system import SystemInfo
+
+# 强制 stdout/stderr 使用 UTF-8：目标机 locale 为 C/POSIX 时 Python 会退化为
+# latin-1 编码，一旦 print 中文就抛 UnicodeEncodeError 直接令服务崩溃。
+for _stream in (sys.stdout, sys.stderr):
+    if _stream and hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 WEB_ROOT = os.path.join(ROOT, "web")
@@ -153,9 +162,8 @@ say "运行: ~/.local/bin/felisros"
 
 
 def install_script(base_url):
-    return (
-        INSTALL_SCRIPT.replace("__BASE_URL__", base_url.rstrip("/"))
-        .replace("__SHA256__", package_digest())
+    return INSTALL_SCRIPT.replace("__BASE_URL__", base_url.rstrip("/")).replace(
+        "__SHA256__", package_digest()
     )
 
 
@@ -202,7 +210,8 @@ def build_config(payload):
 
     raw_deploy = {
         "schema": config.DEPLOY_SCHEMA,
-        "name": str(payload.get("name") or "felisros 部署配置").strip() or "felisros 部署配置",
+        "name": str(payload.get("name") or "felisros 部署配置").strip()
+        or "felisros 部署配置",
         "version": version,
         "kind": kind,
         "mirror": mirror,
@@ -212,7 +221,10 @@ def build_config(payload):
     deploy = config.parse_deploy(raw_deploy)
 
     if remote:
-        name = str(payload.get("name") or "felisros 批量部署").strip() or "felisros 批量部署"
+        name = (
+            str(payload.get("name") or "felisros 批量部署").strip()
+            or "felisros 批量部署"
+        )
         defaults = payload.get("defaults") or {}
         if not isinstance(defaults, dict):
             raise ConfigError("默认凭据必须是对象")
@@ -329,7 +341,9 @@ class Handler(BaseHTTPRequestHandler):
         with open(path, "rb") as handle:
             body = handle.read()
         self.send_response(200)
-        self.send_header("Content-Type", mimetypes.guess_type(path)[0] or "application/octet-stream")
+        self.send_header(
+            "Content-Type", mimetypes.guess_type(path)[0] or "application/octet-stream"
+        )
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -400,7 +414,9 @@ class Handler(BaseHTTPRequestHandler):
                 print("自动打包失败: " + str(exc))
                 package = ""
             if not package:
-                return self.send_json({"error": "安装包自动打包失败，请检查源码后重试"}, 500)
+                return self.send_json(
+                    {"error": "安装包自动打包失败，请检查源码后重试"}, 500
+                )
             return self.send_file(package)
         if route == "/api/release":
             host = (lan_addresses() or ["127.0.0.1"])[0]
@@ -489,7 +505,10 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 seq = 0
             return self.send_json(
-                {"events": self.installer.bus.since(seq), "state": self.installer.snapshot()}
+                {
+                    "events": self.installer.bus.since(seq),
+                    "state": self.installer.snapshot(),
+                }
             )
         if route in ("/", "/index.html"):
             return self.send_file(os.path.join(WEB_ROOT, "index.html"))
@@ -519,7 +538,9 @@ class Handler(BaseHTTPRequestHandler):
             found = peers.probe(ips, port)
             if self.beacon:
                 self.beacon.add(found)
-            return self.send_json({"ok": True, "peers": self.beacon.list() if self.beacon else found})
+            return self.send_json(
+                {"ok": True, "peers": self.beacon.list() if self.beacon else found}
+            )
 
         if route == "/api/update/check":
             try:
@@ -535,7 +556,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/api/update/apply":
             if not capabilities.CAPABILITIES["local_update"]:
-                return self.denied(PermissionError(capabilities.DENY_MESSAGES["local_update"]))
+                return self.denied(
+                    PermissionError(capabilities.DENY_MESSAGES["local_update"])
+                )
             restart = payload.get("restart")
             if restart is None:
                 restart = True
@@ -555,7 +578,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/api/update/settings":
             if not capabilities.CAPABILITIES["local_update"]:
-                return self.denied(PermissionError(capabilities.DENY_MESSAGES["local_update"]))
+                return self.denied(
+                    PermissionError(capabilities.DENY_MESSAGES["local_update"])
+                )
             settings = self.updater.configure(
                 payload,
                 peers=lambda: self.beacon.list() if self.beacon else [],
@@ -568,10 +593,14 @@ class Handler(BaseHTTPRequestHandler):
                     PermissionError(capabilities.DENY_MESSAGES["local_install"])
                 )
             try:
-                deploy = config.parse_deploy(payload)
+                body = dict(payload) if isinstance(payload, dict) else payload
+                sudo_password = ""
+                if isinstance(body, dict):
+                    sudo_password = str(body.pop("sudo_password", "") or "")
+                deploy = config.parse_deploy(body)
             except ConfigError as exc:
                 return self.fail(exc)
-            ok, message = self.installer.start(deploy)
+            ok, message = self.installer.start(deploy, sudo_password)
             return self.send_json({"ok": ok, "message": message}, 200 if ok else 409)
 
         if route == "/api/cancel":
@@ -583,7 +612,9 @@ class Handler(BaseHTTPRequestHandler):
                 manifest = config.parse_versions(parse_text(payload))
             except ConfigError as exc:
                 return self.fail(exc)
-            return self.send_json({"ok": True, "summary": config.versions_summary(manifest)})
+            return self.send_json(
+                {"ok": True, "summary": config.versions_summary(manifest)}
+            )
 
         if route == "/api/versions/import":
             try:
@@ -824,7 +855,14 @@ def run_deploy(path, system):
                     print("* " + event["status"] + " " + event["step"])
                 elif event["type"] == "done":
                     result = event["result"]
-                    print("结果: " + ("安装完成" if event["ok"] else "未完成 - " + str(result.get("reason"))))
+                    print(
+                        "结果: "
+                        + (
+                            "安装完成"
+                            if event["ok"]
+                            else "未完成 - " + str(result.get("reason"))
+                        )
+                    )
                     return 0 if event["ok"] else 1
             if not installer.snapshot()["running"] and not events:
                 break
@@ -865,7 +903,9 @@ def run_fleet(path, system, report_path=None):
                     print(prefix + event["text"])
                 elif event["type"] == "fleet_done":
                     print(
-                        "结果: 成功 {} 台，失败 {} 台".format(event["ok_count"], event["fail_count"])
+                        "结果: 成功 {} 台，失败 {} 台".format(
+                            event["ok_count"], event["fail_count"]
+                        )
                     )
                     reports = event.get("reports") or []
                     for item in reports:
@@ -907,19 +947,37 @@ def run_fleet(path, system, report_path=None):
 def main(argv=None):
     setup_runtime_logs()
     parser = argparse.ArgumentParser(description="felisros - ROS 图形化安装器")
-    parser.add_argument("--host", default="0.0.0.0", help="绑定地址，默认 0.0.0.0（监听所有网卡）")
+    parser.add_argument(
+        "--host", default="0.0.0.0", help="绑定地址，默认 0.0.0.0（监听所有网卡）"
+    )
     parser.add_argument("--port", type=int, default=8737)
-    parser.add_argument("--no-browser", action="store_true", help="启动后不自动打开浏览器")
-    parser.add_argument("--lan", action="store_true", help="兼容旧用法，等价于默认的 --host 0.0.0.0")
+    parser.add_argument(
+        "--no-browser", action="store_true", help="启动后不自动打开浏览器"
+    )
+    parser.add_argument(
+        "--lan", action="store_true", help="兼容旧用法，等价于默认的 --host 0.0.0.0"
+    )
     parser.add_argument("--deploy", metavar="FILE", help="按 JSON 配置文件无界面部署")
     parser.add_argument("--fleet", metavar="FILE", help="按设备清单 JSON 批量部署")
-    parser.add_argument("--report", metavar="FILE", help="批量部署结果报告写入 JSON 文件")
+    parser.add_argument(
+        "--report", metavar="FILE", help="批量部署结果报告写入 JSON 文件"
+    )
     parser.add_argument("--versions", metavar="FILE", help="启动时导入版本清单 JSON")
-    parser.add_argument("--no-beacon", action="store_true", help="不向局域网广播本机更新源")
-    parser.add_argument("--check-update", action="store_true", help="检查局域网是否有更新版本后退出")
-    parser.add_argument("--apply-update", action="store_true", help="从更新源拉取并安装最新版本后退出")
-    parser.add_argument("--update-seed", metavar="URL", help="更新源地址，如 http://192.168.1.20:8737")
-    parser.add_argument("--no-restart", action="store_true", help="更新后不自动重启服务")
+    parser.add_argument(
+        "--no-beacon", action="store_true", help="不向局域网广播本机更新源"
+    )
+    parser.add_argument(
+        "--check-update", action="store_true", help="检查局域网是否有更新版本后退出"
+    )
+    parser.add_argument(
+        "--apply-update", action="store_true", help="从更新源拉取并安装最新版本后退出"
+    )
+    parser.add_argument(
+        "--update-seed", metavar="URL", help="更新源地址，如 http://192.168.1.20:8737"
+    )
+    parser.add_argument(
+        "--no-restart", action="store_true", help="更新后不自动重启服务"
+    )
     args = parser.parse_args(argv)
 
     if args.check_update or args.apply_update:
@@ -982,16 +1040,16 @@ def main(argv=None):
     Handler.beacon = peers.PeerBeacon(args.port)
 
     def push_update(text, level="out"):
-        Handler.update_bus.push({"type": "update_log", "text": str(text), "level": level})
+        Handler.update_bus.push(
+            {"type": "update_log", "text": str(text), "level": level}
+        )
 
     Handler.updater = peers.AutoUpdater(push_update, port=args.port)
     if not args.no_beacon:
         Handler.beacon.start()
     saved_update = release.load_auto()
     if saved_update.get("enabled"):
-        Handler.updater.configure(
-            saved_update, peers=lambda: Handler.beacon.list()
-        )
+        Handler.updater.configure(saved_update, peers=lambda: Handler.beacon.list())
 
     host = "0.0.0.0" if args.lan else args.host
     lan_mode = host == "0.0.0.0"
@@ -999,16 +1057,24 @@ def main(argv=None):
     httpd = ThreadingHTTPServer((host, args.port), Handler)
     url = "http://{}:{}/".format("127.0.0.1" if lan_mode else host, args.port)
     print("felisros {} 已启动: {}".format(release.VERSION, url))
-    print("角色: {}   遥测: 无".format(
-        "控制端（Windows，仅管理 Linux 设备）" if capabilities.is_windows() else "完整端（Linux）"
-    ))
+    print(
+        "角色: {}   遥测: 无".format(
+            "控制端（Windows，仅管理 Linux 设备）"
+            if capabilities.is_windows()
+            else "完整端（Linux）"
+        )
+    )
     if lan_mode:
         addresses = lan_addresses()
         if addresses:
             print("局域网分发地址:")
             for ip in addresses:
                 print("  http://{}:{}/".format(ip, args.port))
-                print("  一键安装: curl -fsSL http://{}:{}/install.sh | sh".format(ip, args.port))
+                print(
+                    "  一键安装: curl -fsSL http://{}:{}/install.sh | sh".format(
+                        ip, args.port
+                    )
+                )
         else:
             print("未检测到局域网地址，其他设备可能无法访问")
         if not os.path.isfile(DIST_PATH):
