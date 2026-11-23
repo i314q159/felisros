@@ -4,3 +4,4 @@ log/
 .playwright-cli/
 .workbuddy/
 .venv/
+.qoder-input-images/
