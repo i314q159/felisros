@@ -1,3 +1,9 @@
+"""已弃用：早期通过 raw.githubusercontent / gitee / keyserver 下载 ROS 公钥的方案。
+
+现由 core/rosrepo.py 使用随包内置公钥 core/data/ros-archive-keyring.gpg 与
+signed-by 校验代替；本模块不再被任何代码 import，仅为兼容历史版本保留。
+"""
+
 import os
 import tempfile
 

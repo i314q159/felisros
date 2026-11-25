@@ -43,19 +43,18 @@ fishros 一键安装会在启动时上报 `run`、上报每一次菜单选择，
 | 用途 | 主机 | 代码位置 |
 | --- | --- | --- |
 | 系统 / ROS 镜像测速与包下载 | `mirrors.ustc.edu.cn`、`mirrors.tuna.tsinghua.edu.cn`、`repo.huaweicloud.com`、`mirrors.aliyun.com`、`mirrors.163.com`、`packages.ros.org` 等 | `core/mirrors.py`、`core/rosrepo.py`、`core/apt.py` |
-| ROS 公钥下载 | `raw.githubusercontent.com`、`gitee.com`、镜像站 | `core/keys.py` |
-| apt 密钥服务器（仅在公钥下载全部失败时） | `keyserver.ubuntu.com` | `core/keys.py` |
+| ROS 公钥 | **无网络请求**：公钥随安装包内置，安装时本地写入目标机 | `core/data/ros-archive-keyring.gpg`、`core/rosrepo.py` |
 | 版本清单里由用户填写的镜像（仅导入并部署后） | 由清单指定，例如 `ros.lab.example` | `core/ros.py`、`core/rosrepo.py` |
 | 批量任务中遥控已安装的 felisros | 目标设备本机 `127.0.0.1:<服务端口>`，从控制端经 SSH 发起 | `core/remote.py` |
 | 设备互发现与更新包拉取 | 用户所在局域网的设备 IP（UDP 8738 广播 + TCP 8737 `/api/release`、`/download`） | `core/peers.py`、`core/release.py` |
 
-可以自己 grep 审计（除镜像测速和密钥地址外，只会命中本机回环地址与内置结果解析函数）：
+可以自己 grep 审计（除镜像测速外，只会命中本机回环地址与内置结果解析函数）：
 
 ```bash
 grep -RInE 'fishros\.org\.cn|/api/install|StatUtils|AdUtils|topic/1733|urlopen|127\.0\.0\.1' felisros/
 ```
 
-本地写入只有：`/etc/apt/sources.list*`、`/etc/apt/sources.list.d/felisros.list`、`/usr/share/keyrings/ros-archive-keyring.gpg`、用户 `~/.bashrc`（或 `~/.zshrc`），以及 `~/.config/felisros/versions.json`、`~/.config/felisros/fleet.json`、`~/.config/felisros/presets.json`、`~/.config/felisros/update.json`（含密码的文件权限为 `0600`）。除此之外不写任何其他持久状态。
+本地写入只有：`/etc/apt/sources.list*`（勾选换系统源时，原文件备份为 `*.felisros.bak`）、`/etc/apt/sources.list.d/felisros.list` 与 `/usr/share/keyrings/felisros-ros.gpg`（**仅当设备没有可复用的 ROS 源、需要 felisros 自己写源时**）、用户 `~/.bashrc`（或 `~/.zshrc`），以及 `~/.config/felisros/versions.json`、`~/.config/felisros/fleet.json`、`~/.config/felisros/presets.json`、`~/.config/felisros/update.json`（含密码的文件权限为 `0600`）。设备已有的 ROS 源文件不会被改写。除此之外不写任何其他持久状态。
 
 ## 依赖
 
@@ -64,7 +63,7 @@ Python 只用标准库，前端资源全部随项目附带、不加载任何 CDN
 | 场景 | 需要 |
 | --- | --- |
 | 基本运行 | Python 3.8+、现代浏览器 |
-| Linux 真实安装 ROS | `sudo`、`apt-get` 或 `aptitude`、`curl` 或 `wget`、`gpg`、`coreutils`（`tee`、`cp`）、`sed` |
+| Linux 真实安装 ROS | `sudo`、`apt-get` 或 `aptitude`、`curl` 或 `wget`、`coreutils`（`base64`、`install`、`cp`、`tee`）、`sed` |
 | 设备发现 | `ip`、`ping`（iproute2 / iputils） |
 | 局域网批量部署与遥控 | `ssh` 客户端；目标设备需可 SSH 登录并具备 sudo 权限 |
 | 后台运行与退出 | 分发后自动后台启动（不设置开机自启），设备上可用 `felisros --stop` 退出 |
@@ -207,6 +206,21 @@ felisros
 - 命令行：`python3 app.py --versions versions.json`，会保存到 `~/.config/felisros/versions.json`，下次启动自动载入。
 - 版本名、系统代号和镜像名只允许小写字母/数字/连字符，地址只允许 `http(s)`，避免清单写入危险命令。
 
+## ROS 软件源与签名校验
+
+安装 ROS 前要先有可用的 apt 源。felisros 的策略是**先复用、再自建**，尽量不动设备已有配置：
+
+1. **优先复用设备已有源**：扫描 `/etc/apt/sources.list`、`/etc/apt/sources.list.d/*.list` 以及 deb822 格式的 `*.sources`，找出与当前系统代号匹配的 ROS 源（`*ros2*/ubuntu`、`*ros/ubuntu`、`packages.ros.org` 等）。命中后先删除 felisros 自己历史上写过的 `felisros.list`（只删自己的，避免同一仓库出现两遍），再执行 `apt-get update` 并用 `apt-cache search ros-base` 确认能取到包。通过就直接复用，界面的「ROS 软件源」会显示实际复用的镜像（例如 `ustc`）。
+2. **复用不通过才自建**：把随包内置的 ROS 归档公钥写到 `/usr/share/keyrings/felisros-ros.gpg`，源行写成 `deb [arch=… signed-by=/usr/share/keyrings/felisros-ros.gpg] …`。这里**不使用 `trusted=yes`**，apt 会正常校验仓库签名；公钥也不再联网下载，离线或只有内网镜像时同样可用。内置公钥为 Open Robotics 的 `C1CF6E31E6BADE8868B172B4F42ED6FBAB17C654`，可用 `gpg --show-keys core/data/ros-archive-keyring.gpg` 核对。
+3. **仍然失败就换源重试**：`apt update` 失败、源里查不到 ROS 包、或探测到某个镜像的安装包已被删除（HTTP 403/404/410）时，自动排除该镜像并换下一个，最多重试 8 轮。
+
+几点实际影响：
+
+- 选了「ROS 镜像源」但设备已有可用源时，**已有源优先**，所选镜像不会生效；想强制使用指定镜像，先删掉设备上的 ROS 源文件再安装。
+- 自建源时写入的 `felisros.list` 和 `felisros-ros.gpg` 在卸载 felisros 时不会自动删除；需要恢复原状时手动删除这两个文件，再 `apt-get update` 即可。
+- 已有源不可用、回退自建后，两套源可能同时存在，日志里会给出「现有 ROS 软件源不可用，改用内置镜像」的告警，可按需手动清理旧文件。
+- 复用的判定包含「该源能提供当前系统支持的 ROS 版本」，避免把只有 ROS1 源的机器误判成可装 ROS2。
+
 ## 局域网自由分发
 
 Windows 端可以把自己变成分发站，让局域网内所有用户自由、免费地安装 felisros，目标机不需要预装任何客户端：
@@ -280,7 +294,7 @@ python3 app.py --apply-update --update-seed http://192.168.1.20:8737
 
 **Linux 嗅探**：扫描时除了 ping 与 22 端口，还会读取 SSH 横幅、ping TTL、探测 8737 端口（已装 felisros 的设备）。横幅含 `Ubuntu`/`Debian`/`OpenSSH…Linux` 等特征、TTL=64、或已运行 felisros 的设备会被标记为 Linux；Windows（TTL=128）与未知设备默认不显示。表格里新增「系统」列，可用「只显示 Linux 设备」开关切换。
 
-**勾选设备与选择配置文件**：先在「局域网设备发现」里扫描并勾选设备（可填统一预设的用户名/密码，也可逐台覆盖）。然后在「部署任务」里点「选择配置文件」从 Windows 本地挑一份 `felisros/deploy/v1` JSON；点「重新选择」可随时换一份，点「校验配置」先验证格式。也可以直接粘贴 JSON，或用「用单机配置填入」复制当前页面的参数。最后点「开始批量部署」。
+**勾选设备与选择配置文件**：先在「局域网设备发现」里扫描并勾选设备（可填统一预设的用户名/密码，也可逐台覆盖）。扫描结果里只有被勾选的设备会进入下方进度列表，取消勾选会立即从列表移除。然后在「部署任务」里点「选择配置文件」从 Windows 本地挑一份 `felisros/deploy/v1` JSON；点「重新选择」可随时换一份，点「校验配置」先验证格式。也可以直接粘贴 JSON，或用「用单机配置填入」复制当前页面的参数。最后点「开始批量部署」。
 
 **发现逻辑**：自动枚举本机所有网卡的 IPv4 网段，界面上列出网卡名、地址和 CIDR，默认全部勾选，可只选其中几块网卡；也可以在下方手填额外网段，多个用逗号分隔（例如 `192.168.1.0/24, 10.0.0.0/24`）。扫描会合并所有选中网段并去重后，先并行 ping，再对在线设备探测 22 端口、抓取 SSH 横幅、读 ping TTL、探测 8737 端口，并从 `/proc/net/arp` 取 MAC、尝试反查主机名。综合这些信号判断是不是 Linux 设备。为避免误扫，单个网段最多 2048 个地址，超出请缩小范围。UDP 8738 广播也会被发往每块网卡的定向广播地址，便于多网段下的设备互发现。
 
@@ -364,6 +378,8 @@ python3 app.py --apply-update --update-seed http://192.168.1.20:8737
 3. **执行**：六步进度条 + 实时滚动的命令日志，可随时取消。
 4. **结果**：本次自动选择清单 + 可直接复制的验证命令（如 `ros2 run turtlesim turtlesim_node`）。
 
+页面里的复制按钮会先尝试 `navigator.clipboard`；用 `http://<局域网 IP>:8737` 打开时属于不安全上下文，浏览器不提供该 API，程序会自动退回 `document.execCommand("copy")`，两种环境都能复制并提示「已复制」。
+
 ## core 包（函数封装清单）
 
 | 模块 | 主要 API | 对应 fishros 逻辑 |
@@ -374,8 +390,8 @@ python3 app.py --apply-update --update-seed http://192.168.1.20:8737
 | `mirrors.py` | `rank()`、`write()` | 下载 `dists/<codename>/Release` 测速、写系统源 |
 | `sysrepo.py` | `switch()` | `tool_config_system_source.change_sys_source` |
 | `ros.py` | `sources_for()`、`recommend()`、`pick_available()` | 版本表 + `ros_dist_dic` / `ros2_dist_dic` 能力矩阵 |
-| `keys.py` | `install()` | 多来源公钥 + **完整指纹校验** + dearmor 导入 |
-| `rosrepo.py` | `ensure()`、`stale_mirrors()` | `find_stale_mirrors` 的 HEAD 探测（403/404/410 换源） |
+| `keys.py` | `install()` | 早期「多来源下载公钥 + 指纹校验」方案，现已不再被调用（文件保留）；当前由 `rosrepo.py` 使用内置公钥 |
+| `rosrepo.py` | `ensure()`、`existing()`、`stale_mirrors()` | 复用设备已有 ROS 源、内置公钥 `signed-by` 写源、坏包 HEAD 探测（403/404/410 换源） |
 | `shellenv.py` | `configure()` | 写 `.bashrc` + 修复 `rosidl_adapt_interfaces.cmake` 中文路径编译问题 |
 | `installer.py` | `Installer.start()`、`EventBus.since()` | 菜单流程 + 状态机 + 日志，替换为事件流 |
 | `config.py` | `parse_versions()`、`parse_deploy()`、`parse_fleet()`、`upsert_preset()`、`redact_presets()` | 新增：版本清单 / 部署配置 / 设备清单 / 凭据预设的校验、持久化和脱敏 |
@@ -413,8 +429,10 @@ felisros/
 │   ├── mirrors.py          系统镜像表、测速、写源与备份
 │   ├── sysrepo.py          系统源切换流程
 │   ├── ros.py              ROS 版本 / 镜像能力矩阵 + 导入覆盖
-│   ├── keys.py             公钥下载、指纹校验、导入
-│   ├── rosrepo.py          ROS 源写入、坏包探测、重试
+│   ├── keys.py             早期公钥下载方案（保留，未使用）
+│   ├── rosrepo.py          复用已有 ROS 源、内置公钥 signed-by 写源、坏包探测
+│   ├── data/
+│   │   └── ros-archive-keyring.gpg  ROS 归档公钥（随包分发，供 signed-by 校验）
 │   ├── shellenv.py         shell 配置与中文路径修复
 │   └── installer.py        六步编排、事件总线
 ├── web/
@@ -424,9 +442,27 @@ felisros/
 └── dist/                   build.py 的产物（生成）
 ```
 
+## 常见问题
+
+**Q：日志里密码显示成 `******`，用户名会跟着变吗？**
+不会。脱敏只替换**单独出现**的密码（前后都不是字母或数字），密码是 `admin` 时用户名 `admin1` 仍原样显示；同一段文本里出现多组密码时优先匹配更长的那个。
+
+**Q：用局域网 IP 打开页面，复制按钮点不动？**
+旧版本直接依赖 `navigator.clipboard`，而 `http://<局域网IP>` 不是安全上下文，该 API 不存在，点击会抛错。现在统一走 `copyText()`：能拿到剪贴板 API 就用，拿不到就退回离屏 `textarea` + `execCommand("copy")`，失败时才提示手动复制。
+
+**Q：设备上已经配好 ROS 源，会被 felisros 改掉吗？**
+不会。它只读取这些文件；只要源可用就直接复用，不改写。需要自己写源时只新增 `felisros.list`，并删除 felisros 以前留下的同名文件，不动用户自己的 `ros2.list` / `ros-fish.list` 等。
+
+**Q：为什么要内置 ROS 公钥？**
+目标机常常没有外网，运行时下载 `raw.githubusercontent.com` 上的 key 会失败。内置公钥后可以离线完成签名校验，同时避免再用 `trusted=yes` 关闭校验。
+
+**Q：改了控制端代码，界面没变化？**
+控制端需要重启 `python app.py` 才会加载新的后端代码；Linux 设备端随安装包更新（`release.ensure_package()` 检测到源码比 `dist/` 新会自动重打包）。
+
 ## 限制
 
 - 只能在 Linux 上真实安装 ROS；Windows / macOS 是控制端，单机安装与自更新会被禁用，但可管理 Linux 设备。
 - 自更新只在 Linux 上生效；更新会从局域网内版本更高的设备拉取，校验 SHA256 后替换程序目录并重启服务，失败时可从保留的 `.backup-*` 目录恢复。
 - 换系统源会修改 apt 配置，原文件备份为 `*.felisros.bak`，程序**不会自动还原**，需要时请手动恢复。
+- 已有 ROS 源不可用时会回退到自建源，此时两套源可能同时存在（日志会告警）；自建的 `felisros.list` 与 `felisros-ros.gpg` 在卸载时不会自动删除。
 - 修改的是系统级包源与密钥，请在自己的机器上自行判断风险。
