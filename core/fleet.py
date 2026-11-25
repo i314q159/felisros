@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from . import release
 from .installer import EventBus
-from .remote import SshClient
+from .remote import SshClient, redact
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PACKAGE = os.path.join(ROOT, "dist", "felisros-linux.tar.gz")
@@ -151,12 +151,10 @@ class Fleet:
         self.log("", "收到取消请求，正在结束批量任务", "warn")
 
     def _clean(self, text, device):
-        safe = str(text or "")
-        for key in ("password", "sudo_password"):
-            secret = device.get(key)
-            if secret:
-                safe = safe.replace(secret, "******")
-        return safe
+        return redact(
+            text,
+            (device.get("password") or "", device.get("sudo_password") or ""),
+        )
 
     def _report(self, device, result, elapsed):
         return {

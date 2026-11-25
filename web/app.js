@@ -57,6 +57,7 @@ function show(view) {
     $("view-" + name).hidden = name !== view;
   });
   state.view = view;
+  if (view !== "update") stopUpdatePoll();
   $("tab-single").classList.toggle("is-on", ["config", "run", "done"].indexOf(view) >= 0);
   $("tab-fleet").classList.toggle("is-on", view === "fleet");
   $("tab-generator").classList.toggle("is-on", view === "generator");
@@ -191,7 +192,8 @@ function startPolling(timerKey, interval, run, onError) {
   stopPolling(timerKey);
   const session = { busy: false, warned: false };
   state[timerKey] = setInterval(async () => {
-    if (session.busy) return;
+    // 页面不可见时不轮询，回到前台后靠 since 游标一次性补齐
+    if (session.busy || document.hidden) return;
     session.busy = true;
     try {
       await run();
@@ -269,10 +271,7 @@ function showResult(result, ok) {
         )
         .join("");
     commands.querySelectorAll("[data-copy]").forEach((button) => {
-      button.addEventListener("click", () => {
-        navigator.clipboard.writeText(button.dataset.copy);
-        button.textContent = "已复制";
-      });
+      button.addEventListener("click", () => copyText(button.dataset.copy, button));
     });
   } else {
     commands.innerHTML = "";
@@ -306,16 +305,28 @@ function preview(el, lines, good) {
   el.textContent = Array.isArray(lines) ? lines.join("\n") : String(lines);
 }
 
+// 页内提示，替代 alert()，避免阻塞和风格割裂
+function notify(message, kind) {
+  const stack = $("toast-stack");
+  if (!stack) return;
+  const item = document.createElement("div");
+  item.className = "toast" + (kind === "bad" ? " bad" : "");
+  item.setAttribute("role", "status");
+  item.textContent = String(message);
+  stack.appendChild(item);
+  window.setTimeout(() => item.remove(), 4200);
+}
+
 function guard(fn) {
   return async () => {
     if (state.running) {
-      alert("安装正在进行，结束后再操作");
+      notify("安装正在进行，结束后再操作");
       return;
     }
     try {
       await fn();
     } catch (exc) {
-      alert(exc.message || exc);
+      notify(exc.message || exc, "bad");
     }
   };
 }
@@ -466,20 +477,19 @@ function renderDevices(devices) {
         <td>${escapeHtml(device.hostname || "—")}</td>
         <td>${badge}</td>
         <td><input type="text" class="dev-user" value="${escapeHtml(device.username)}"></td>
-        <td><input type="text" class="dev-pass" placeholder="${escapeHtml(placeholderFor(device, "password"))}"></td>
-        <td><input type="text" class="dev-sudo" placeholder="${escapeHtml(placeholderFor(device, "sudo_password"))}"></td>
+        <td><input type="password" class="dev-pass" autocomplete="new-password" placeholder="${escapeHtml(placeholderFor(device, "password"))}"></td>
+        <td><input type="password" class="dev-sudo" autocomplete="new-password" placeholder="${escapeHtml(placeholderFor(device, "sudo_password"))}"></td>
         <td class="dev-status">${escapeHtml(device.status || "等待")}</td>
       </tr>`;
     })
     .join("");
-  $("fleet-devices").innerHTML = state.devices
-    .map((device) => `<li data-ip="${escapeHtml(device.ip)}">${escapeHtml(device.ip)} · 等待</li>`)
-    .join("");
+  renderFleetDeviceList();
   $("device-body").querySelectorAll("tr").forEach((row) => {
     const index = Number(row.dataset.index);
     const device = state.devices[index];
     row.querySelector(".dev-select").addEventListener("change", (event) => {
       device.selected = event.target.checked;
+      renderFleetDeviceList();
       markFleetDirty();
     });
     row.querySelector(".dev-user").addEventListener("input", (event) => {
@@ -501,6 +511,21 @@ function renderDevices(devices) {
       }
     });
   });
+}
+
+function renderFleetDeviceList() {
+  const list = $("fleet-devices");
+  if (!list) return;
+  // 只列真正参与本次任务的设备；扫描到的其他机器不勾选就不该出现在进度里
+  const selected = state.devices.filter((device) => device.selected);
+  list.innerHTML = selected.length
+    ? selected
+        .map(
+          (device) =>
+            `<li data-ip="${escapeHtml(device.ip)}">${escapeHtml(device.ip)} · ${escapeHtml(device.status || "等待")}</li>`
+        )
+        .join("")
+    : '<li class="empty">尚未勾选设备</li>';
 }
 
 function setDeviceStatus(ip, status, reason) {
@@ -949,7 +974,7 @@ async function startInstall() {
   try {
     await api("/api/start", localPayload(currentFormConfig()));
   } catch (exc) {
-    alert(exc.message || exc);
+    notify(exc.message || exc, "bad");
     return;
   }
   state.since = 0;
@@ -1054,19 +1079,7 @@ function downloadGenerated() {
 
 async function copyGenerated() {
   if (!state.generated) return;
-  const text = state.generated.text;
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch (exc) {
-    const area = document.createElement("textarea");
-    area.value = text;
-    document.body.appendChild(area);
-    area.select();
-    document.execCommand("copy");
-    area.remove();
-  }
-  $("gen-copy").textContent = "已复制";
-  window.setTimeout(() => ($("gen-copy").textContent = "复制 JSON"), 1500);
+  await copyText(state.generated.text, $("gen-copy"));
 }
 
 async function applyGenerated() {
@@ -1138,8 +1151,8 @@ function renderDistDevices(devices) {
         <td>${escapeHtml(device.ip)}</td>
         <td>${system}</td>
         <td><input type="text" class="dist-user" value="${escapeHtml(device.username)}"></td>
-        <td><input type="text" class="dist-pass" placeholder="${escapeHtml(distPlaceholder(device, "password"))}"></td>
-        <td><input type="text" class="dist-sudo" placeholder="${escapeHtml(distPlaceholder(device, "sudo_password"))}"></td>
+        <td><input type="password" class="dist-pass" autocomplete="new-password" placeholder="${escapeHtml(distPlaceholder(device, "password"))}"></td>
+        <td><input type="password" class="dist-sudo" autocomplete="new-password" placeholder="${escapeHtml(distPlaceholder(device, "sudo_password"))}"></td>
         <td class="dist-status">${escapeHtml(device.status || "等待")}</td>
       </tr>`;
     })
@@ -1340,7 +1353,7 @@ function renderPeers(peers) {
       const newer = compareVersions(peer.version, state.version) > 0;
       const version = escapeHtml(String(peer.version || "-"));
       const button = state.role === "control"
-        ? '<button type="button" class="ghost peer-apply" disabled>控制端不可自更新</button>'
+        ? '<button type="button" class="ghost peer-apply" disabled title="当前是 Windows 控制端，不能更新自身；请到 Linux 设备上操作">本机不能自更新</button>'
         : '<button type="button" class="ghost peer-apply" data-seed="' + escapeHtml(peer.base_url || ("http://" + peer.ip + ":" + (peer.port || 8737))) + '">从这台更新</button>';
       return "<tr><td>" + escapeHtml(peer.ip || "") + '</td><td class="' + (newer ? "peer-new" : "") + '">' + version +
         "</td><td>" + escapeHtml(peer.role || peer.capabilities && peer.capabilities.role || "-") + "</td><td>" +
@@ -1414,7 +1427,7 @@ function stopUpdatePoll() {
 function startUpdatePoll() {
   startPolling(
     "updateTimer",
-    900,
+    1500,
     async () => {
       const data = await fetch("/api/update/events?since=" + state.updateSince).then((r) => r.json());
       data.events.forEach((event) => updateLine(event.text, event.level));
@@ -1474,17 +1487,44 @@ async function loadLan() {
   $("dist-download").style.opacity = info.package_exists ? "1" : "0.5";
 }
 
-async function copyText(text, button) {
+// 剪贴板在 http://<局域网IP> 下属于不安全上下文，navigator.clipboard 不可用，
+// 必须先判断 isSecureContext，再退回 execCommand，否则复制会静默失败。
+function legacyCopy(text) {
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.top = "-1000px";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.select();
+  area.setSelectionRange(0, area.value.length);
+  let ok = false;
   try {
-    await navigator.clipboard.writeText(text);
+    ok = document.execCommand("copy");
   } catch (exc) {
-    const area = document.createElement("textarea");
-    area.value = text;
-    document.body.appendChild(area);
-    area.select();
-    document.execCommand("copy");
-    area.remove();
+    ok = false;
   }
+  area.remove();
+  return ok;
+}
+
+async function copyText(text, button) {
+  let ok = false;
+  if (window.isSecureContext && navigator.clipboard) {
+    try {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    } catch (exc) {
+      ok = false;
+    }
+  }
+  if (!ok) ok = legacyCopy(text);
+  if (!ok) {
+    notify("复制失败，请手动选中文本复制", "bad");
+    return;
+  }
+  if (!button) return;
   const previous = button.textContent;
   button.textContent = "已复制";
   window.setTimeout(() => (button.textContent = previous), 1500);
@@ -1567,6 +1607,7 @@ function bind() {
     document.querySelectorAll("#device-body .dev-select").forEach((box, index) => {
       box.checked = state.devices[index].selected;
     });
+    renderFleetDeviceList();
     markFleetDirty();
   });
   $("dist-all").addEventListener("click", () => {
@@ -1614,7 +1655,7 @@ function bind() {
     try {
       await importFleetText(text);
     } catch (exc) {
-      alert(exc.message || exc);
+      notify(exc.message || exc, "bad");
     }
   });
   $("fleet-export").addEventListener("click", guard(exportFleet));
@@ -1632,7 +1673,7 @@ function bind() {
     try {
       await importConfigFile(event.target.files[0]);
     } catch (exc) {
-      alert(exc.message || exc);
+      notify(exc.message || exc, "bad");
     }
     event.target.value = "";
   });

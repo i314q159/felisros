@@ -201,6 +201,21 @@ class RemoteError(Exception):
     pass
 
 
+def redact(text, secrets):
+    """把密码从日志里抹掉，但只匹配独立出现的整段。
+
+    直接 str.replace 会把用户名里的同名前缀也误伤：密码 admin 时
+    admin1@host 会变成 ******1@host，日志因此无法辨认。这里要求
+    命中位置左右都不是字母数字，并且优先替换较长的密码。
+    """
+    safe = str(text or "")
+    for secret in sorted({item for item in secrets if item}, key=len, reverse=True):
+        safe = re.sub(
+            r"(?<![0-9A-Za-z]){}(?![0-9A-Za-z])".format(re.escape(secret)), "******", safe
+        )
+    return safe
+
+
 def package_archive():
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
@@ -235,11 +250,7 @@ class SshClient:
     def emit(self, text, level="out"):
         if not text or not self.on_line:
             return
-        safe = text
-        for secret in (self.password, self.sudo_password):
-            if secret:
-                safe = safe.replace(secret, "******")
-        self.on_line(safe, level)
+        self.on_line(redact(text, (self.password, self.sudo_password)), level)
 
     def _env(self):
         env = dict(os.environ)
